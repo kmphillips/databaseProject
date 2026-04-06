@@ -13,8 +13,6 @@ function App() {
     const form = event.currentTarget
     const formData = new FormData(form)
 
-    const fullName = formData.get('fullName')?.toString().trim() ?? ''
-    const email = formData.get('email')?.toString().trim() ?? ''
     const username = formData.get('username')?.toString().trim() ?? ''
     const password = formData.get('password')?.toString() ?? ''
     const confirmPassword = formData.get('confirmPassword')?.toString() ?? ''
@@ -36,8 +34,6 @@ function App() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          fullName,
-          email,
           username,
           password,
         }),
@@ -75,21 +71,6 @@ function App() {
         </div>
 
         <form className="signup-form" onSubmit={handleSubmit}>
-          <label>
-            Full name
-            <input type="text" name="fullName" placeholder="Alex Carter" required />
-          </label>
-
-          <label>
-            Email address
-            <input
-              type="email"
-              name="email"
-              placeholder="alex@example.com"
-              required
-            />
-          </label>
-
           <label>
             Username
             <input type="text" name="username" placeholder="queenGambit" required />
