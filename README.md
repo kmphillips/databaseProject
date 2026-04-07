@@ -24,14 +24,10 @@ GETTING DB PROXY and Local dev TO WORK
 2. Install with default settings
 3. Login to Connected google account
 4. Select correct project
-5. Run "gcloud auth application-default login"
-
-1. Download cloud-sql-proxy.exe
-2. Place it inside project folder
-3. run "cloud-sql-proxy.exe cs4750db-492516:us-east4:chess-app-db address 127.0.0.1 --port 3306"
-
-Run "npm run dev" and "npm run dev:server"
-With proxy and those 2 you should be able to use app locally and connect to google DB
+5. Run "gcloud auth application-default login" in the google shell
+6. run "cloud-sql-proxy.exe cs4750db-492516:us-east4:chess-app-db address 127.0.0.1 --port 3306" in cmd in this project
+7. Run "npm run dev" and "npm run dev:server" in cmd in this project
+8. With proxy and those 2 you should be able to use app locally and connect to google DB
 
 
 
