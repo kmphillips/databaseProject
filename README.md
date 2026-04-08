@@ -62,7 +62,7 @@ In another terminal, start frontend:
 npm run dev
 ```
 
-The frontend submits to `/api/register`, which Vite proxies to `http://localhost:4000`.
+The frontend submits to `/api/register`, which Vite proxies to `http://127.0.0.1:4000`.
 
 ## Raw SQL Used for Registration
 
