@@ -1,26 +1,31 @@
-.signup-page {
+.app-shell {
   min-height: 100svh;
-  display: grid;
-  place-items: center;
-  padding: 32px 20px;
+  padding: 20px;
   background:
     radial-gradient(circle at top left, rgba(174, 58, 255, 0.16), transparent 32%),
     radial-gradient(circle at bottom right, rgba(30, 41, 59, 0.09), transparent 28%),
     var(--page-bg);
 }
 
-.signup-card {
-  width: min(100%, 480px);
-  padding: 40px;
-  border-radius: 28px;
+.top-bar {
+  margin: 0 auto 20px;
+  width: min(100%, 1120px);
+  padding: 20px;
+  border-radius: 22px;
   border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.74);
+  backdrop-filter: blur(14px);
   box-shadow: var(--shadow);
-  backdrop-filter: blur(16px);
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: center;
 }
 
-.signup-copy {
-  margin-bottom: 28px;
+.brand-block h1 {
+  font-size: clamp(1.6rem, 2.2vw, 2.2rem);
+  line-height: 1;
+  margin: 0;
 }
 
 .eyebrow {
@@ -32,8 +37,162 @@
   font-weight: 700;
 }
 
-.signup-copy h1 {
+.top-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.nav-link {
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  text-decoration: none;
+  color: var(--text-h);
+  font-weight: 600;
+  transition: background-color 0.2s ease;
+}
+
+.nav-link:hover,
+.nav-link:focus-visible {
+  background: rgba(123, 75, 214, 0.08);
+}
+
+.nav-link-active {
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--accent), #2c1f65);
+  color: #fff;
+}
+
+.page-content {
+  margin: 0 auto;
+  width: min(100%, 1120px);
+}
+
+.panel {
+  display: grid;
+  gap: 16px;
+}
+
+.panel-header h2 {
+  margin: 0;
+  font-size: clamp(1.8rem, 3.2vw, 2.8rem);
+  line-height: 1.05;
+}
+
+.panel-card,
+.signup-card,
+.stat-card {
+  border-radius: 22px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(16px);
+}
+
+.panel-card {
+  padding: 22px;
+}
+
+.panel-card h3 {
+  margin: 0 0 14px;
+  font-size: 1.15rem;
+  color: var(--text-h);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.stat-card {
+  padding: 18px;
+}
+
+.stat-label {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.stat-value {
+  font-size: 2rem;
+  line-height: 1;
+  margin-top: 8px;
+  color: var(--text-h);
+  font-weight: 700;
+}
+
+.simple-list {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 10px;
+}
+
+.game-layout {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 1.5fr 1fr;
+}
+
+.board {
+  margin-top: 6px;
+  width: min(100%, 460px);
+  aspect-ratio: 1;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+}
+
+.board-square {
+  width: 100%;
+  height: 100%;
+}
+
+.board-square.light {
+  background: #f2e8d8;
+}
+
+.board-square.dark {
+  background: #8c6b43;
+}
+
+.profile-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.profile-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-h);
+  margin-top: 4px;
+}
+
+.signup-page {
+  display: grid;
+  place-items: center;
+  padding: 12px 0 2px;
+}
+
+.signup-card {
+  width: min(100%, 560px);
+  padding: 40px;
+}
+
+.signup-copy {
+  margin-bottom: 28px;
+}
+
+.signup-copy h2 {
   margin: 0 0 12px;
+  font-size: clamp(1.8rem, 4.8vw, 3rem);
+  line-height: 1;
+  color: var(--text-h);
 }
 
 .lede {
@@ -112,6 +271,23 @@
   box-shadow: none;
 }
 
+.secondary-action {
+  display: inline-flex;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  padding: 12px 18px;
+  text-decoration: none;
+  color: var(--text-h);
+  font-weight: 700;
+  transition: background-color 0.2s ease;
+}
+
+.secondary-action:hover,
+.secondary-action:focus-visible {
+  background: rgba(123, 75, 214, 0.08);
+}
+
 .status-message {
   border-radius: 12px;
   padding: 10px 12px;
@@ -135,17 +311,30 @@
   color: var(--text);
 }
 
+@media (max-width: 900px) {
+  .top-bar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .stats-grid,
+  .profile-grid,
+  .game-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 640px) {
-  .signup-page {
+  .app-shell {
+    padding: 12px;
+  }
+
+  .top-bar {
     padding: 16px;
   }
 
   .signup-card {
     padding: 28px 20px;
     border-radius: 22px;
-  }
-
-  .signup-copy h1 {
-    font-size: 36px;
   }
 }

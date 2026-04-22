@@ -91,6 +91,39 @@ app.post('/api/register', async (request, response) => {
   }
 })
 
+app.post('/api/login', async (request, response) => {
+  const { username, password } = request.body ?? {}
+  if (!username || !password) {
+    response.status(400).json({ message: 'Username and password are required.' })
+    return
+  }
+
+  const [existingRows] = await pool.execute(
+      'SELECT user_id, password FROM Users WHERE username = ? LIMIT 1',
+      [username],
+    )
+  if (!Array.isArray(existingRows) || existingRows.length === 0) {
+    response.status(401).json({ message: 'Invalid username or password.' })
+    return
+  }
+
+  const user = existingRows[0]
+  const passwordMatch = await bcrypt.compare(password, user.password)
+  if (!passwordMatch) {
+    response.status(401).json({ message: 'Invalid username or password.' })
+    return
+  }
+
+  await pool.execute(
+    'UPDATE Users SET last_login = CURRENT_TIMESTAMP WHERE user_id = ?',
+    [user.user_id],
+  )
+  console.log(`User ${username} logged in successfully.`)
+  response.json({ message: 'Login successful.' })
+
+
+})
+
 app.listen(port, () => {
   console.log(`API server listening on http://localhost:${port}`)
 })
