@@ -30,6 +30,40 @@ if (process.env.DB_SSL === 'true') {
 
 const pool = mysql.createPool(dbConfig)
 
+async function finalizeSiteGame(connection, gameId, gameResult) {
+  await connection.execute(
+    "UPDATE Games SET status = 'completed', result = ? WHERE game_id = ?",
+    [gameResult, gameId],
+  )
+
+  const [playerRows] = await connection.execute(
+    'SELECT user_id, color, start_rating FROM Has WHERE game_id = ?',
+    [gameId],
+  )
+
+  if (!Array.isArray(playerRows)) {
+    return
+  }
+
+  for (const player of playerRows) {
+    let ratingDelta = 0
+    if (gameResult !== 'draw') {
+      ratingDelta = player.color === gameResult ? 10 : -10
+    }
+
+    const endRating = Number(player.start_rating) + ratingDelta
+    await connection.execute(
+      'UPDATE Has SET end_rating = ? WHERE game_id = ? AND user_id = ?',
+      [endRating, gameId, player.user_id],
+    )
+
+    await connection.execute(
+      'UPDATE Users SET rating = ? WHERE user_id = ?',
+      [endRating, player.user_id],
+    )
+  }
+}
+
 app.use(cors({ origin: 'http://localhost:5173' }))
 app.use(express.json())
 
@@ -135,9 +169,13 @@ app.post('/api/login', async (request, response) => {
 })
 
 app.post('/api/games/start', async (request, response) => {
-  const { createdByUserId, opponentUsername } = request.body ?? {}
-  if (!createdByUserId || !opponentUsername) {
-    response.status(400).json({ message: 'createdByUserId and opponentUsername are required.' })
+  const { createdByUserId, creatorColor } = request.body ?? {}
+  if (!createdByUserId) {
+    response.status(400).json({ message: 'createdByUserId is required.' })
+    return
+  }
+  if (creatorColor && !['white', 'black', 'random'].includes(String(creatorColor))) {
+    response.status(400).json({ message: 'creatorColor must be white, black, or random.' })
     return
   }
 
@@ -155,32 +193,36 @@ app.post('/api/games/start', async (request, response) => {
       return
     }
 
-    const [opponentRows] = await connection.execute(
-      'SELECT user_id, username, rating FROM Users WHERE username = ? LIMIT 1',
-      [opponentUsername],
-    )
-    if (!Array.isArray(opponentRows) || opponentRows.length === 0) {
-      await connection.rollback()
-      response.status(404).json({ message: 'Opponent user was not found.' })
-      return
-    }
-
     const creator = creatorRows[0]
-    const opponent = opponentRows[0]
-    if (creator.user_id === opponent.user_id) {
+    const [activeGameRows] = await connection.execute(
+      "SELECT g.game_id FROM Games g JOIN Has h ON g.game_id = h.game_id WHERE h.user_id = ? AND g.status IN ('waiting', 'in_progress') LIMIT 1",
+      [creator.user_id],
+    )
+    if (Array.isArray(activeGameRows) && activeGameRows.length > 0) {
       await connection.rollback()
-      response.status(400).json({ message: 'Choose another account as opponent.' })
+      response.status(409).json({ message: 'You are already in an active game.' })
       return
     }
 
-    const gameId = Number(`${Date.now()}${Math.floor(Math.random() * 1000)}`)
-    const inviteCode = `LOCAL${String(gameId).slice(-12)}`
+    const chosenColor = String(creatorColor ?? 'random')
+    const assignedCreatorColor =
+      chosenColor === 'random'
+        ? Math.random() < 0.5
+          ? 'white'
+          : 'black'
+        : chosenColor
+    const inviteCodeSuffix = `${Date.now()}${Math.floor(Math.random() * 1000)}`
+    const inviteCode = `LOCAL${inviteCodeSuffix.slice(-12)}`
     const gameTimeInSeconds = 600
 
-    await connection.execute(
-      'INSERT INTO Games (game_id, created_by, status, result, time_control, is_rated) VALUES (?, ?, ?, ?, ?, ?)',
-      [gameId, creator.user_id, 'in_progress', null, '10+0', false],
+    const [gamesInsertResult] = await connection.execute(
+      'INSERT INTO Games (created_by, status, result, time_control, is_rated) VALUES (?, ?, ?, ?, ?)',
+      [creator.user_id, 'waiting', null, '10+0', false],
     )
+    const gameId = Number(gamesInsertResult.insertId)
+    if (!Number.isFinite(gameId) || gameId <= 0) {
+      throw new Error('Could not determine game_id for new game.')
+    }
 
     await connection.execute(
       'INSERT INTO SiteGame (game_id, invite_code, game_time) VALUES (?, ?, ?)',
@@ -188,29 +230,30 @@ app.post('/api/games/start', async (request, response) => {
     )
 
     await connection.execute(
-      'INSERT INTO Has (game_id, user_id, color, start_rating, end_rating) VALUES (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)',
+      'INSERT INTO Has (game_id, user_id, color, start_rating, end_rating) VALUES (?, ?, ?, ?, ?)',
       [
         gameId,
         creator.user_id,
-        'white',
+        assignedCreatorColor,
         creator.rating,
-        null,
-        gameId,
-        opponent.user_id,
-        'black',
-        opponent.rating,
         null,
       ],
     )
 
     await connection.commit()
     response.status(201).json({
-      message: 'Game started.',
+      message: 'Open game created.',
       game: {
         gameId,
-        whiteUsername: creator.username,
-        blackUsername: opponent.username,
+        whiteUsername:
+          assignedCreatorColor === 'white' ? creator.username : 'Waiting for opponent',
+        blackUsername:
+          assignedCreatorColor === 'black' ? creator.username : 'Waiting for opponent',
+        status: 'waiting',
+        playerColor: assignedCreatorColor,
+        opponentUsername: 'Waiting for opponent',
       },
+      inviteCode,
     })
   } catch (error) {
     await connection.rollback()
@@ -221,8 +264,242 @@ app.post('/api/games/start', async (request, response) => {
   }
 })
 
+app.get('/api/games/open', async (_request, response) => {
+  try {
+    const [rows] = await pool.execute(
+      "SELECT sg.game_id, sg.invite_code, sg.game_time, g.status, u.username AS creator_username FROM SiteGame sg JOIN Games g ON sg.game_id = g.game_id JOIN Users u ON g.created_by = u.user_id WHERE g.status = 'waiting' ORDER BY sg.game_id DESC",
+    )
+
+    response.json({
+      games: Array.isArray(rows) ? rows : [],
+    })
+  } catch (error) {
+    console.error('Open games request failed:', error)
+    response.status(500).json({ message: 'Server error while loading open games.' })
+  }
+})
+
+app.post('/api/games/join', async (request, response) => {
+  const { userId, inviteCode } = request.body ?? {}
+  if (!userId || !inviteCode) {
+    response.status(400).json({ message: 'userId and inviteCode are required.' })
+    return
+  }
+
+  const connection = await pool.getConnection()
+  try {
+    await connection.beginTransaction()
+
+    const [joinerRows] = await connection.execute(
+      'SELECT user_id, username, rating FROM Users WHERE user_id = ? LIMIT 1',
+      [userId],
+    )
+    if (!Array.isArray(joinerRows) || joinerRows.length === 0) {
+      await connection.rollback()
+      response.status(404).json({ message: 'Joining account not found.' })
+      return
+    }
+    const joiner = joinerRows[0]
+    const [joinerActiveGameRows] = await connection.execute(
+      "SELECT g.game_id FROM Games g JOIN Has h ON g.game_id = h.game_id WHERE h.user_id = ? AND g.status IN ('waiting', 'in_progress') LIMIT 1",
+      [joiner.user_id],
+    )
+    if (Array.isArray(joinerActiveGameRows) && joinerActiveGameRows.length > 0) {
+      await connection.rollback()
+      response.status(409).json({ message: 'You are already in an active game.' })
+      return
+    }
+
+    const [openGameRows] = await connection.execute(
+      "SELECT sg.game_id, g.created_by FROM SiteGame sg JOIN Games g ON sg.game_id = g.game_id WHERE sg.invite_code = ? AND g.status = 'waiting' LIMIT 1 FOR UPDATE",
+      [inviteCode],
+    )
+    if (!Array.isArray(openGameRows) || openGameRows.length === 0) {
+      await connection.rollback()
+      response.status(404).json({ message: 'Open game for this invite code was not found.' })
+      return
+    }
+
+    const openGame = openGameRows[0]
+    if (Number(openGame.created_by) === Number(joiner.user_id)) {
+      await connection.rollback()
+      response.status(400).json({ message: 'You cannot join your own game.' })
+      return
+    }
+
+    const [playerRows] = await connection.execute(
+      'SELECT user_id, color FROM Has WHERE game_id = ? FOR UPDATE',
+      [openGame.game_id],
+    )
+    if (!Array.isArray(playerRows) || playerRows.length === 0) {
+      await connection.rollback()
+      response.status(500).json({ message: 'Game players are not initialized correctly.' })
+      return
+    }
+
+    const creatorPlayer = playerRows.find(
+      (player) => Number(player.user_id) === Number(openGame.created_by),
+    )
+    if (!creatorPlayer) {
+      await connection.rollback()
+      response.status(500).json({ message: 'Creator player row could not be found.' })
+      return
+    }
+    const joinerColor = creatorPlayer.color === 'white' ? 'black' : 'white'
+
+    await connection.execute(
+      'INSERT INTO Has (game_id, user_id, color, start_rating, end_rating) VALUES (?, ?, ?, ?, ?)',
+      [openGame.game_id, joiner.user_id, joinerColor, joiner.rating, null],
+    )
+
+    await connection.execute(
+      "UPDATE Games SET status = 'in_progress' WHERE game_id = ?",
+      [openGame.game_id],
+    )
+
+    const [creatorRows] = await connection.execute(
+      'SELECT username FROM Users WHERE user_id = ? LIMIT 1',
+      [openGame.created_by],
+    )
+    const creatorUsername =
+      Array.isArray(creatorRows) && creatorRows.length > 0 ? creatorRows[0].username : 'Creator'
+
+    const whiteUsername = creatorPlayer.color === 'white' ? creatorUsername : joiner.username
+    const blackUsername = creatorPlayer.color === 'white' ? joiner.username : creatorUsername
+
+    await connection.commit()
+    response.json({
+      message: 'Game joined.',
+      game: {
+        gameId: Number(openGame.game_id),
+        whiteUsername,
+        blackUsername,
+        status: 'in_progress',
+        playerColor: joinerColor,
+        opponentUsername: creatorUsername,
+      },
+    })
+  } catch (error) {
+    await connection.rollback()
+    console.error('Join game request failed:', error)
+    response.status(500).json({ message: 'Server error while joining game.' })
+  } finally {
+    connection.release()
+  }
+})
+
+app.get('/api/games/active/:userId', async (request, response) => {
+  const userId = Number(request.params.userId)
+  if (!Number.isFinite(userId) || userId <= 0) {
+    response.status(400).json({ message: 'A valid userId is required.' })
+    return
+  }
+
+  try {
+    const [activeRows] = await pool.execute(
+      "SELECT g.game_id, g.status FROM Games g JOIN Has h ON g.game_id = h.game_id WHERE h.user_id = ? AND g.status IN ('waiting', 'in_progress') ORDER BY g.game_id DESC LIMIT 1",
+      [userId],
+    )
+
+    if (!Array.isArray(activeRows) || activeRows.length === 0) {
+      response.json({ game: null })
+      return
+    }
+
+    const activeGame = activeRows[0]
+    const [playersRows] = await pool.execute(
+      'SELECT h.user_id, h.color, u.username FROM Has h JOIN Users u ON h.user_id = u.user_id WHERE h.game_id = ?',
+      [activeGame.game_id],
+    )
+
+    const players = Array.isArray(playersRows) ? playersRows : []
+    const whitePlayer = players.find((player) => player.color === 'white')
+    const blackPlayer = players.find((player) => player.color === 'black')
+    const currentPlayerById = players.find(
+      (player) => Number(player.user_id) === Number(userId),
+    )
+    const currentPlayerColor =
+      currentPlayerById?.color === 'black' ? 'black' : 'white'
+    const opponentUsername =
+      players.find((player) => Number(player.user_id) !== Number(userId))?.username ??
+      'Waiting for opponent'
+
+    response.json({
+      game: {
+        gameId: Number(activeGame.game_id),
+        whiteUsername: whitePlayer?.username ?? 'Waiting for opponent',
+        blackUsername: blackPlayer?.username ?? 'Waiting for opponent',
+        status: String(activeGame.status),
+        playerColor: currentPlayerColor,
+        opponentUsername,
+      },
+    })
+  } catch (error) {
+    console.error('Active game request failed:', error)
+    response.status(500).json({ message: 'Server error while loading active game.' })
+  }
+})
+
+app.post('/api/games/resign', async (request, response) => {
+  const { gameId, userId } = request.body ?? {}
+  if (!gameId || !userId) {
+    response.status(400).json({ message: 'gameId and userId are required.' })
+    return
+  }
+
+  const connection = await pool.getConnection()
+  try {
+    await connection.beginTransaction()
+
+    const [gameRows] = await connection.execute(
+      "SELECT game_id, status FROM Games WHERE game_id = ? FOR UPDATE",
+      [gameId],
+    )
+    if (!Array.isArray(gameRows) || gameRows.length === 0) {
+      await connection.rollback()
+      response.status(404).json({ message: 'Game not found.' })
+      return
+    }
+
+    const game = gameRows[0]
+    if (String(game.status) !== 'in_progress') {
+      await connection.rollback()
+      response.status(400).json({ message: 'Only in-progress games can be resigned.' })
+      return
+    }
+
+    const [resignerRows] = await connection.execute(
+      'SELECT color FROM Has WHERE game_id = ? AND user_id = ? LIMIT 1',
+      [gameId, userId],
+    )
+    if (!Array.isArray(resignerRows) || resignerRows.length === 0) {
+      await connection.rollback()
+      response.status(403).json({ message: 'User is not a player in this game.' })
+      return
+    }
+
+    const resignerColor = String(resignerRows[0].color)
+    const winnerColor = resignerColor === 'white' ? 'black' : 'white'
+
+    await finalizeSiteGame(connection, Number(gameId), winnerColor)
+
+    await connection.commit()
+    response.json({
+      ok: true,
+      message: `${winnerColor} wins by resignation.`,
+      result: winnerColor,
+    })
+  } catch (error) {
+    await connection.rollback()
+    console.error('Resign request failed:', error)
+    response.status(500).json({ message: 'Server error while resigning game.' })
+  } finally {
+    connection.release()
+  }
+})
+
 app.post('/api/games/move', async (request, response) => {
-  const { gameId, moveNumber, from, to, san, fenAfterMove } = request.body ?? {}
+  const { gameId, moveNumber, from, to, san, fenAfterMove, gameResult } = request.body ?? {}
 
   if (
     !gameId ||
@@ -274,10 +551,14 @@ app.post('/api/games/move', async (request, response) => {
       [gameId, nextMoveNumber, san],
     )
 
-    await connection.execute(
-      "UPDATE Games SET status = 'in_progress' WHERE game_id = ?",
-      [gameId],
-    )
+    if (gameResult === 'white' || gameResult === 'black' || gameResult === 'draw') {
+      await finalizeSiteGame(connection, Number(gameId), gameResult)
+    } else {
+      await connection.execute(
+        "UPDATE Games SET status = 'in_progress' WHERE game_id = ?",
+        [gameId],
+      )
+    }
 
     await connection.commit()
     response.status(202).json({
@@ -291,6 +572,29 @@ app.post('/api/games/move', async (request, response) => {
     response.status(500).json({ message: 'Server error while processing move.' })
   } finally {
     connection.release()
+  }
+})
+
+app.get('/api/games/:gameId/moves', async (request, response) => {
+  const gameId = Number(request.params.gameId)
+  if (!Number.isFinite(gameId) || gameId <= 0) {
+    response.status(400).json({ message: 'A valid gameId is required.' })
+    return
+  }
+
+  try {
+    const [rows] = await pool.execute(
+      'SELECT move_number, notation, time FROM Moves WHERE game_id = ? ORDER BY move_number ASC',
+      [gameId],
+    )
+
+    response.json({
+      gameId,
+      moves: Array.isArray(rows) ? rows : [],
+    })
+  } catch (error) {
+    console.error('Get moves request failed:', error)
+    response.status(500).json({ message: 'Server error while loading moves.' })
   }
 })
 
