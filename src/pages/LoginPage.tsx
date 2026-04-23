@@ -1,8 +1,11 @@
 import { useState } from 'react'
 import type { SyntheticEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Link } from 'react-router-dom'
+import { setSessionUser } from '../features/auth/session'
 
 export function LoginPage() {
+  const navigate = useNavigate()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [statusMessage, setStatusMessage] = useState('')
   const [statusType, setStatusType] = useState<'success' | 'error' | ''>('')
@@ -32,14 +35,22 @@ export function LoginPage() {
         }),
       })
 
-      const payload = (await response.json()) as { message?: string }
+      const payload = (await response.json()) as {
+        message?: string
+        user?: { userId: number; username: string }
+      }
 
       if (!response.ok) {
         throw new Error(payload.message ?? 'Unable to log in.')
       }
+      if (!payload.user) {
+        throw new Error('Login succeeded but no user data was returned.')
+      }
 
+      setSessionUser(payload.user)
       setStatusType('success')
       setStatusMessage(payload.message ?? 'Login successful.')
+      navigate('/game')
     } catch (error) {
       setStatusType('error')
       setStatusMessage(error instanceof Error ? error.message : 'Unable to log in.')
