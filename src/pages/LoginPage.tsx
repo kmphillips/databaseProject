@@ -2,10 +2,11 @@ import { useState } from 'react'
 import type { SyntheticEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Link } from 'react-router-dom'
-import { setSessionUser } from '../features/auth/session'
+import { useAuth } from '../App'
 
 export function LoginPage() {
   const navigate = useNavigate()
+  const { login } = useAuth()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [statusMessage, setStatusMessage] = useState('')
   const [statusType, setStatusType] = useState<'success' | 'error' | ''>('')
@@ -47,7 +48,7 @@ export function LoginPage() {
         throw new Error('Login succeeded but no user data was returned.')
       }
 
-      setSessionUser(payload.user)
+      login(payload.user)
       setStatusType('success')
       setStatusMessage(payload.message ?? 'Login successful.')
       navigate('/game')

@@ -1,38 +1,52 @@
-import { NavLink, Outlet } from 'react-router-dom'
-
-const navItems = [
-  { to: '/login', label: 'Login' },
-  { to: '/dashboard', label: 'Dashboard' },
-  { to: '/game', label: 'Game' },
-  { to: '/profile', label: 'Profile' },
-  { to: '/create-account', label: 'Create account' },
-]
+import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { useAuth } from '../App'
 
 export function AppLayout() {
+  const { user, logout } = useAuth()
+  const navigate = useNavigate()
+
+  function handleLogout() {
+    logout()
+    navigate('/login')
+  }
+
   return (
     <div className="app-shell">
-      <header className="top-bar">
-        <div className="brand-block">
-          <p className="eyebrow">Chess app</p>
-          <h1>Control Center</h1>
-        </div>
+      {user && (
+        <header className="top-bar">
+          <div className="brand-block">
+            <p className="eyebrow">Chess app</p>
+            <h1>Control Center</h1>
+          </div>
 
-        <nav aria-label="Primary navigation" className="top-nav">
-          {navItems.map((item) => (
+          <nav aria-label="Primary navigation" className="top-nav">
             <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                isActive ? 'nav-link nav-link-active' : 'nav-link'
-              }
+              to="/dashboard"
+              className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}
             >
-              {item.label}
+              Dashboard
             </NavLink>
-          ))}
-        </nav>
-      </header>
+            <NavLink
+              to="/game"
+              className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}
+            >
+              Game
+            </NavLink>
+            <NavLink
+              to="/profile"
+              className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}
+            >
+              Profile
+            </NavLink>
+          </nav>
 
-      <main className="page-content">
+          <button className="nav-link logout-btn" onClick={handleLogout}>
+            Logout
+          </button>
+        </header>
+      )}
+
+      <main className={user ? 'page-content' : 'page-content page-content-auth'}>
         <Outlet />
       </main>
     </div>

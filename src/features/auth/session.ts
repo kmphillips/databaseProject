@@ -25,3 +25,7 @@ export function getSessionUser(): SessionUser | null {
 export function setSessionUser(user: SessionUser) {
   localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(user))
 }
+
+export function clearSessionUser() {
+  localStorage.removeItem(SESSION_STORAGE_KEY)
+}
