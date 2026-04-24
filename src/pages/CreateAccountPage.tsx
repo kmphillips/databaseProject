@@ -1,7 +1,9 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import type { SyntheticEvent } from 'react'
 
 export function CreateAccountPage() {
+  const navigate = useNavigate()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [statusMessage, setStatusMessage] = useState('')
   const [statusType, setStatusType] = useState<'success' | 'error' | ''>('')
@@ -47,6 +49,7 @@ export function CreateAccountPage() {
       setStatusType('success')
       setStatusMessage(payload.message ?? 'Account created successfully.')
       form.reset()
+      setTimeout(() => navigate('/login'), 1500)
     } catch (error) {
       setStatusType('error')
       setStatusMessage(
@@ -116,6 +119,13 @@ export function CreateAccountPage() {
           <p className="fine-print">
             By creating an account, you agree to store your chess progress and
             profile details.
+          </p>
+
+          <p className="fine-print">
+            Already have an account?{' '}
+            <button type="button" className="link-action" onClick={() => navigate('/login')}>
+              Login
+            </button>
           </p>
         </form>
       </article>

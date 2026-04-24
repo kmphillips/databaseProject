@@ -331,6 +331,32 @@
   color: var(--text);
 }
 
+.link-action {
+  background: none;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 2px 12px;
+  color: var(--accent);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
+}
+
+.link-action:hover,
+.link-action:focus-visible {
+  background: var(--accent);
+  color: #fff;
+}
+
+.link-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
 @media (max-width: 900px) {
   .top-bar {
     flex-direction: column;
