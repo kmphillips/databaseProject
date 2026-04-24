@@ -1,3 +1,6 @@
+import { useEffect, useState } from 'react'
+import { useAuth } from '../App'
+
 const recentMatches = [
   { id: 1, opponent: 'rookRunner', result: 'Win', opening: 'Sicilian Defense' },
   { id: 2, opponent: 'castleKing', result: 'Loss', opening: 'French Defense' },
@@ -5,6 +8,18 @@ const recentMatches = [
 ]
 
 export function DashboardPage() {
+  const { user } = useAuth()
+  const [rating, setRating] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (!user) return
+
+    fetch(`/api/users/${user.userId}`)
+      .then((res) => res.ok ? res.json() : Promise.reject())
+      .then((data) => setRating(data.rating))
+      .catch(() => {})
+  }, [user])
+
   return (
     <section className="panel" aria-labelledby="dashboard-title">
       <div className="panel-header">
@@ -15,16 +30,9 @@ export function DashboardPage() {
       <div className="stats-grid">
         <article className="stat-card">
           <p className="stat-label">Current rating</p>
-          <p className="stat-value">1420</p>
+          <p className="stat-value">{rating ?? '—'}</p>
         </article>
-        <article className="stat-card">
-          <p className="stat-label">Games this week</p>
-          <p className="stat-value">9</p>
-        </article>
-        <article className="stat-card">
-          <p className="stat-label">Win streak</p>
-          <p className="stat-value">3</p>
-        </article>
+
       </div>
 
       <article className="panel-card">

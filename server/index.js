@@ -575,6 +575,81 @@ app.post('/api/games/move', async (request, response) => {
   }
 })
 
+app.post('/api/users/:userId/change-password', async (request, response) => {
+  const userId = Number(request.params.userId)
+  if (!Number.isFinite(userId) || userId <= 0) {
+    response.status(400).json({ message: 'A valid userId is required.' })
+    return
+  }
+
+  const { currentPassword, newPassword } = request.body ?? {}
+  if (!currentPassword || !newPassword) {
+    response.status(400).json({ message: 'Current and new password are required.' })
+    return
+  }
+
+  if (String(newPassword).length < 8) {
+    response.status(400).json({ message: 'New password must be at least 8 characters.' })
+    return
+  }
+
+  try {
+    const [rows] = await pool.execute(
+      'SELECT password FROM Users WHERE user_id = ? LIMIT 1',
+      [userId],
+    )
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+      response.status(404).json({ message: 'User not found.' })
+      return
+    }
+
+    const passwordMatch = await bcrypt.compare(currentPassword, rows[0].password)
+    if (!passwordMatch) {
+      response.status(401).json({ message: 'Current password is incorrect.' })
+      return
+    }
+
+    const newHash = await bcrypt.hash(newPassword, 12)
+    await pool.execute('UPDATE Users SET password = ? WHERE user_id = ?', [newHash, userId])
+
+    response.json({ message: 'Password updated successfully.' })
+  } catch (error) {
+    console.error('Change password request failed:', error)
+    response.status(500).json({ message: 'Server error while changing password.' })
+  }
+})
+
+app.get('/api/users/:userId', async (request, response) => {
+  const userId = Number(request.params.userId)
+  if (!Number.isFinite(userId) || userId <= 0) {
+    response.status(400).json({ message: 'A valid userId is required.' })
+    return
+  }
+
+  try {
+    const [rows] = await pool.execute(
+      'SELECT username, created_at, rating FROM Users WHERE user_id = ? LIMIT 1',
+      [userId],
+    )
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+      response.status(404).json({ message: 'User not found.' })
+      return
+    }
+
+    const user = rows[0]
+    response.json({
+      username: user.username,
+      createdAt: user.created_at,
+      rating: user.rating,
+    })
+  } catch (error) {
+    console.error('Get user request failed:', error)
+    response.status(500).json({ message: 'Server error while loading user.' })
+  }
+})
+
 app.get('/api/games/:gameId/moves', async (request, response) => {
   const gameId = Number(request.params.gameId)
   if (!Number.isFinite(gameId) || gameId <= 0) {
