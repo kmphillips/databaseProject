@@ -7,6 +7,7 @@ import { CreateAccountPage } from './pages/CreateAccountPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { GamePage } from './pages/GamePage'
 import { LoginPage } from './pages/LoginPage'
+import { FriendsPage } from './pages/FriendsPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { getSessionUser, setSessionUser, clearSessionUser } from './features/auth/session'
 import type { SessionUser } from './features/auth/session'
@@ -61,6 +62,7 @@ function App() {
           <Route path="/create-account" element={<GuestRoute><CreateAccountPage /></GuestRoute>} />
           <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
           <Route path="/game" element={<ProtectedRoute><GamePage /></ProtectedRoute>} />
+          <Route path="/friends" element={<ProtectedRoute><FriendsPage /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to={user ? '/game' : '/login'} replace />} />
         </Route>

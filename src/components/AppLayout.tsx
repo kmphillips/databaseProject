@@ -33,6 +33,12 @@ export function AppLayout() {
               Game
             </NavLink>
             <NavLink
+              to="/friends"
+              className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}
+            >
+              Friends
+            </NavLink>
+            <NavLink
               to="/profile"
               className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}
             >

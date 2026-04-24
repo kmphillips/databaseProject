@@ -620,6 +620,187 @@ app.post('/api/users/:userId/change-password', async (request, response) => {
   }
 })
 
+app.get('/api/users/search', async (request, response) => {
+  const { username, requesterId } = request.query
+  if (!username || String(username).trim().length === 0) {
+    response.status(400).json({ message: 'username query param is required.' })
+    return
+  }
+
+  try {
+    const [rows] = await pool.execute(
+      'SELECT user_id, username, rating FROM Users WHERE username LIKE ? AND user_id != ? LIMIT 10',
+      [`%${String(username).trim()}%`, Number(requesterId) || 0],
+    )
+    response.json({ users: Array.isArray(rows) ? rows : [] })
+  } catch (error) {
+    console.error('User search failed:', error)
+    response.status(500).json({ message: 'Server error while searching users.' })
+  }
+})
+
+app.get('/api/friends/:userId', async (request, response) => {
+  const userId = Number(request.params.userId)
+  if (!Number.isFinite(userId) || userId <= 0) {
+    response.status(400).json({ message: 'A valid userId is required.' })
+    return
+  }
+
+  try {
+    const [rows] = await pool.execute(
+      `SELECT u.user_id, u.username, u.rating
+       FROM FriendsWith f
+       JOIN Users u ON u.user_id = f.friend_user_id
+       WHERE f.user_id = ? AND f.status = 'accepted'`,
+      [userId],
+    )
+    response.json({ friends: Array.isArray(rows) ? rows : [] })
+  } catch (error) {
+    console.error('Get friends failed:', error)
+    response.status(500).json({ message: 'Server error while loading friends.' })
+  }
+})
+
+app.get('/api/friends/:userId/pending', async (request, response) => {
+  const userId = Number(request.params.userId)
+  if (!Number.isFinite(userId) || userId <= 0) {
+    response.status(400).json({ message: 'A valid userId is required.' })
+    return
+  }
+
+  try {
+    const [rows] = await pool.execute(
+      `SELECT u.user_id, u.username, u.rating
+       FROM FriendsWith f
+       JOIN Users u ON u.user_id = f.user_id
+       WHERE f.friend_user_id = ? AND f.status = 'pending'`,
+      [userId],
+    )
+    response.json({ requests: Array.isArray(rows) ? rows : [] })
+  } catch (error) {
+    console.error('Get pending requests failed:', error)
+    response.status(500).json({ message: 'Server error while loading friend requests.' })
+  }
+})
+
+app.post('/api/friends/request', async (request, response) => {
+  const { userId, friendUserId } = request.body ?? {}
+  if (!userId || !friendUserId) {
+    response.status(400).json({ message: 'userId and friendUserId are required.' })
+    return
+  }
+  if (Number(userId) === Number(friendUserId)) {
+    response.status(400).json({ message: 'You cannot send a friend request to yourself.' })
+    return
+  }
+
+  try {
+    const [existing] = await pool.execute(
+      'SELECT status FROM FriendsWith WHERE user_id = ? AND friend_user_id = ?',
+      [userId, friendUserId],
+    )
+    if (Array.isArray(existing) && existing.length > 0) {
+      const status = existing[0].status
+      if (status === 'accepted') {
+        response.status(409).json({ message: 'You are already friends.' })
+      } else if (status === 'pending') {
+        response.status(409).json({ message: 'Friend request already sent.' })
+      } else {
+        response.status(409).json({ message: 'A friend request already exists.' })
+      }
+      return
+    }
+
+    await pool.execute(
+      "INSERT INTO FriendsWith (user_id, friend_user_id, status) VALUES (?, ?, 'pending')",
+      [userId, friendUserId],
+    )
+    response.status(201).json({ message: 'Friend request sent.' })
+  } catch (error) {
+    console.error('Send friend request failed:', error)
+    response.status(500).json({ message: 'Server error while sending friend request.' })
+  }
+})
+
+app.post('/api/friends/accept', async (request, response) => {
+  const { userId, friendUserId } = request.body ?? {}
+  if (!userId || !friendUserId) {
+    response.status(400).json({ message: 'userId and friendUserId are required.' })
+    return
+  }
+
+  const connection = await pool.getConnection()
+  try {
+    await connection.beginTransaction()
+
+    const [result] = await connection.execute(
+      "UPDATE FriendsWith SET status = 'accepted' WHERE user_id = ? AND friend_user_id = ? AND status = 'pending'",
+      [friendUserId, userId],
+    )
+    if (result.affectedRows === 0) {
+      await connection.rollback()
+      response.status(404).json({ message: 'Pending friend request not found.' })
+      return
+    }
+
+    await connection.execute(
+      "INSERT INTO FriendsWith (user_id, friend_user_id, status) VALUES (?, ?, 'accepted')",
+      [userId, friendUserId],
+    )
+
+    await connection.commit()
+    response.json({ message: 'Friend request accepted.' })
+  } catch (error) {
+    await connection.rollback()
+    console.error('Accept friend request failed:', error)
+    response.status(500).json({ message: 'Server error while accepting friend request.' })
+  } finally {
+    connection.release()
+  }
+})
+
+app.post('/api/friends/remove', async (request, response) => {
+  const { userId, friendUserId } = request.body ?? {}
+  if (!userId || !friendUserId) {
+    response.status(400).json({ message: 'userId and friendUserId are required.' })
+    return
+  }
+
+  try {
+    await pool.execute(
+      'DELETE FROM FriendsWith WHERE (user_id = ? AND friend_user_id = ?) OR (user_id = ? AND friend_user_id = ?)',
+      [userId, friendUserId, friendUserId, userId],
+    )
+    response.json({ message: 'Friend removed.' })
+  } catch (error) {
+    console.error('Remove friend failed:', error)
+    response.status(500).json({ message: 'Server error while removing friend.' })
+  }
+})
+
+app.post('/api/friends/reject', async (request, response) => {
+  const { userId, friendUserId } = request.body ?? {}
+  if (!userId || !friendUserId) {
+    response.status(400).json({ message: 'userId and friendUserId are required.' })
+    return
+  }
+
+  try {
+    const [result] = await pool.execute(
+      "UPDATE FriendsWith SET status = 'rejected' WHERE user_id = ? AND friend_user_id = ? AND status = 'pending'",
+      [friendUserId, userId],
+    )
+    if (result.affectedRows === 0) {
+      response.status(404).json({ message: 'Pending friend request not found.' })
+      return
+    }
+    response.json({ message: 'Friend request declined.' })
+  } catch (error) {
+    console.error('Reject friend request failed:', error)
+    response.status(500).json({ message: 'Server error while declining friend request.' })
+  }
+})
+
 app.get('/api/users/:userId', async (request, response) => {
   const userId = Number(request.params.userId)
   if (!Number.isFinite(userId) || userId <= 0) {
