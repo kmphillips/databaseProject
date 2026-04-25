@@ -591,6 +591,55 @@ app.post('/api/games/move', async (request, response) => {
   }
 })
 
+app.post('/api/users/:userId/deleteFavoriteOpening', async (request, response) => {
+  const userId = Number(request.params.userId)
+  const { openingName } = request.body ?? {}
+  if (!Number.isFinite(userId) || userId <= 0) {
+    response.status(400).json({ message: 'A valid userId is required.' })
+    return
+  }
+  if (!openingName || String(openingName).trim().length === 0) {
+    response.status(400).json({ message: 'openingName is required.' })
+    return
+  }
+
+  try {
+    const [result] = await pool.execute(
+      'DELETE FROM UserFavoriteOpenings WHERE user_id = ? AND opening_name = ?',
+      [userId, String(openingName).trim()],
+    )
+    response.json({ message: 'Favorite opening removed successfully.' })
+  } catch (error) {
+    console.error('Delete favorite opening failed:', error)
+    response.status(500).json({ message: 'Server error while removing favorite opening.' })
+  }
+})
+
+app.post('/api/users/:userId/addFavoriteOpening', async (request, response) => {
+  const userId = Number(request.params.userId)
+  const { openingName } = request.body ?? {}
+  console.log(`Add favorite opening request: userId=${userId}, openingName=${openingName}`)
+  if (!Number.isFinite(userId) || userId <= 0) {
+    response.status(400).json({ message: 'A valid userId is required.' })
+    return
+  }
+  if (!openingName || String(openingName).trim().length === 0) {
+    response.status(400).json({ message: 'openingName is required.' })
+    return 
+  }
+
+  try {
+    await pool.execute(
+      'INSERT INTO UserFavoriteOpenings (user_id, opening_name) VALUES (?, ?)',
+      [userId, String(openingName).trim()]
+    )
+    response.json({ message: 'Favorite opening added successfully.' })
+  } catch (error) {
+    console.error('Add favorite opening failed:', error)
+    response.status(500).json({ message: 'Server error while adding favorite opening.' })
+  }
+})
+
 app.post('/api/users/:userId/change-password', async (request, response) => {
   const userId = Number(request.params.userId)
   if (!Number.isFinite(userId) || userId <= 0) {
@@ -1063,10 +1112,20 @@ app.get('/api/users/:userId', async (request, response) => {
     }
 
     const user = rows[0]
+
+    const [favoriteOpeningsRows] = await pool.execute(
+      'SELECT opening_name FROM UserFavoriteOpenings WHERE user_id = ?',
+      [userId],
+    )
+    const favoriteOpenings = Array.isArray(favoriteOpeningsRows)
+      ? favoriteOpeningsRows.map((row) => row.opening_name)
+      : []
+
     response.json({
       username: user.username,
       createdAt: user.created_at,
       rating: user.rating,
+      favoriteOpenings,
     })
   } catch (error) {
     console.error('Get user request failed:', error)

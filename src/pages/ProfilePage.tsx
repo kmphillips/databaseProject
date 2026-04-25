@@ -9,6 +9,7 @@ type UserProfile = {
   username: string
   createdAt: string
   rating: number
+  favoriteOpenings: string[]
 }
 
 function formatOutcome(result: string | null, yourColor: 'white' | 'black'): string {
@@ -38,6 +39,8 @@ export function ProfilePage() {
   const [showPasswordForm, setShowPasswordForm] = useState(false)
   const [pwSubmitting, setPwSubmitting] = useState(false)
   const [pwStatus, setPwStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+
+  const [showFavoriteOpenings, setShowFavoriteOpenings] = useState(false)
 
   useEffect(() => {
     if (!user) return
@@ -130,6 +133,57 @@ export function ProfilePage() {
     }
   }
 
+  async function handleEditOpenings(event: SyntheticEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!user) return
+
+    const form = event.currentTarget
+    const formData = new FormData(form)
+    const openingInput = formData.get('openingInput')?.toString() ?? ''
+    const favoriteOpening = openingInput.trim()
+    const action = formData.get('action')?.toString()
+    //console.log('handleEditOpenings', { favoriteOpening, action })
+      if (action === 'add') {
+        if (favoriteOpening.length === 0) {
+          setError('Please enter an opening name to add.')
+          return
+        }
+        if (profile?.favoriteOpenings.includes(favoriteOpening)) {
+          setError('This opening is already in your favorites.')
+          return
+        }
+        try {
+          const res = await fetch(`/api/users/${user?.userId}/addFavoriteOpening`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ openingName: favoriteOpening }),
+          })
+        } catch (err) {
+          setError('Failed to add favorite opening.')
+        }
+      }
+      if (action === 'remove') {
+        if (favoriteOpening.length === 0) {
+          setError('Please enter an opening name to remove.')
+          return
+        }
+        if (!profile?.favoriteOpenings.includes(favoriteOpening)) {
+          setError('This opening is not in your favorites.')
+          return
+        }
+        try {          
+            const res = await fetch(`/api/users/${user?.userId}/deleteFavoriteOpening`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ openingName: favoriteOpening }),
+          })
+        }
+         catch (err) {
+          setError('Failed to remove favorite opening.')
+        }
+      } 
+  }
+
   const memberSince = profile?.createdAt
     ? new Date(profile.createdAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     : '—'
@@ -155,6 +209,10 @@ export function ProfilePage() {
         <div>
           <p className="stat-label">Member since</p>
           <p className="profile-value">{memberSince}</p>
+        </div>
+        <div>
+          <p className="stat-label">Favorite Openings</p>
+          <p className="profile-value">{profile?.favoriteOpenings.join(', ') ?? '—'}</p>
         </div>
       </article>
 
@@ -297,6 +355,36 @@ export function ProfilePage() {
                 )}
               </form>
             )}
+          </li>
+          <li>
+            <button
+              type="button"
+              className="link-action"
+              onClick={() => { setShowFavoriteOpenings((v) => !v)  }}
+            >
+              {showFavoriteOpenings ? 'Cancel' : 'Edit favorite openings'}
+            </button>
+            {showFavoriteOpenings && (
+              <form className="signup-form" style={{ marginTop: '16px' }} onSubmit={handleEditOpenings}>
+                <label>
+                  Opening
+                  <input type="text" name="openingInput" placeholder="Enter favorite opening" required />
+                </label>
+                <label>
+                  Action
+                  <select name="action" required>
+                    <option value="">Select action</option>
+                    <option value="add">Add to favorites</option>
+                    <option value="remove">Remove from favorites</option>
+                  </select>
+                </label>
+                <button type="submit" className="primary-action">
+                  Submit
+                </button>
+                
+              </form>
+            )}
+
           </li>
         </ul>
       </article>
