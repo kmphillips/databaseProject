@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { SyntheticEvent } from 'react'
+import { apiUrl } from '../config/api'
 
 export function CreateAccountPage() {
   const navigate = useNavigate()
@@ -29,7 +30,7 @@ export function CreateAccountPage() {
     setStatusType('')
 
     try {
-      const response = await fetch('/api/register', {
+      const response = await fetch(apiUrl('/api/register'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

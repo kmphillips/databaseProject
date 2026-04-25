@@ -97,3 +97,111 @@ curl -X POST http://localhost:4000/api/register \
 - `npm run dev`
 
 4. Confirm the Cloud SQL proxy command includes `--address` exactly as shown above.
+
+## 4. Local vs GCP API Base URL
+
+Frontend API calls use a shared helper (`src/config/api.ts`) and `VITE_API_BASE_URL`.
+
+- Local development: do not set `VITE_API_BASE_URL` (or leave it empty). Requests stay as `/api/...` and Vite proxy handles routing to `http://127.0.0.1:4000`.
+- Production: set `VITE_API_BASE_URL` to your deployed backend URL (for example, `https://chess-api-xxxxxx-ue.a.run.app`).
+
+Example `.env` for local:
+
+```env
+PORT=4000
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_USER=your_username
+DB_PASSWORD=your_password_here
+DB_NAME=chess_app
+```
+
+## 5. Deploy Backend to Cloud Run (GCP)
+
+Use PowerShell syntax (backticks for multiline). Do not set `PORT` manually on Cloud Run.
+
+```powershell
+gcloud run deploy chess-api `
+  --source . `
+  --region us-east4 `
+  --allow-unauthenticated `
+  --set-env-vars "DB_USER=your_db_user,DB_PASSWORD=your_db_password,DB_NAME=chess_app,DB_SOCKET_PATH=/cloudsql/your-project:us-east4:your-instance" `
+  --add-cloudsql-instances "your-project:us-east4:your-instance"
+```
+
+Get backend URL:
+
+```powershell
+gcloud run services describe chess-api --region us-east4 --format="value(status.url)"
+```
+
+Health check:
+
+```bash
+curl https://YOUR_CHESS_API_URL/api/health
+```
+
+## 6. Deploy Frontend to Cloud Run (GCP)
+
+Create `Dockerfile.frontend` in the project root:
+
+```dockerfile
+FROM node:20-alpine AS build
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci
+
+COPY . .
+
+ARG VITE_API_BASE_URL
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+
+RUN npm run build
+
+FROM nginx:1.27-alpine
+COPY --from=build /app/dist /usr/share/nginx/html
+EXPOSE 8080
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+Build and deploy:
+
+```powershell
+gcloud builds submit `
+  --tag gcr.io/your-project/chess-web `
+  --file Dockerfile.frontend `
+  --build-arg VITE_API_BASE_URL=https://YOUR_CHESS_API_URL
+```
+
+```powershell
+gcloud run deploy chess-web `
+  --image gcr.io/your-project/chess-web `
+  --region us-east4 `
+  --allow-unauthenticated
+```
+
+Get frontend URL:
+
+```powershell
+gcloud run services describe chess-web --region us-east4 --format="value(status.url)"
+```
+
+Use the `chess-web` URL for demonstration to show the app is fully hosted on GCP.
+
+## 7. User Awards (trigger-based)
+
+This repo includes trigger-based award SQL at:
+
+- `server/sql/user_awards.sql`
+
+Run that script in Cloud SQL Studio after your base schema is created. It adds:
+
+- `AwardDefinitions`
+- `UserAwards`
+- Stored procedures + triggers that grant awards when users:
+  - play games (`1, 5, 10, 25, 50, 100`)
+  - upload games (`1, 5, 10, 25, 50, 100`)
+  - play moves (`100, 500, 1000, 10000`)
+
+Profile and friend profile views automatically display awarded badges once these tables are active.

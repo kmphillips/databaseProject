@@ -13,9 +13,10 @@ import type {
   UploadedGamesListResult,
   UserGameHistoryResult,
 } from '../types'
+import { apiUrl } from '../../../config/api'
 
 export async function startGame(payload: StartGamePayload): Promise<StartGameResult> {
-  const response = await fetch('/api/games/start', {
+  const response = await fetch(apiUrl('/api/games/start'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -32,7 +33,7 @@ export async function startGame(payload: StartGamePayload): Promise<StartGameRes
 }
 
 export async function getOpenGames(): Promise<GetOpenGamesResult> {
-  const response = await fetch('/api/games/open')
+  const response = await fetch(apiUrl('/api/games/open'))
   const body = (await response.json()) as GetOpenGamesResult & { message?: string }
   if (!response.ok) {
     throw new Error(body.message ?? 'Failed to load open games.')
@@ -42,7 +43,7 @@ export async function getOpenGames(): Promise<GetOpenGamesResult> {
 }
 
 export async function joinGame(payload: JoinGamePayload): Promise<StartGameResult> {
-  const response = await fetch('/api/games/join', {
+  const response = await fetch(apiUrl('/api/games/join'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -59,7 +60,7 @@ export async function joinGame(payload: JoinGamePayload): Promise<StartGameResul
 }
 
 export async function persistMove(payload: PersistMovePayload): Promise<PersistMoveResult> {
-  const response = await fetch('/api/games/move', {
+  const response = await fetch(apiUrl('/api/games/move'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -76,7 +77,7 @@ export async function persistMove(payload: PersistMovePayload): Promise<PersistM
 }
 
 export async function getGameMoves(gameId: number): Promise<GetGameMovesResult> {
-  const response = await fetch(`/api/games/${gameId}/moves`)
+  const response = await fetch(apiUrl(`/api/games/${gameId}/moves`))
   const body = (await response.json()) as GetGameMovesResult & { message?: string }
   if (!response.ok) {
     throw new Error(body.message ?? 'Failed to load move history.')
@@ -86,7 +87,7 @@ export async function getGameMoves(gameId: number): Promise<GetGameMovesResult> 
 }
 
 export async function getActiveGame(userId: number): Promise<ActiveGameResult> {
-  const response = await fetch(`/api/games/active/${userId}`)
+  const response = await fetch(apiUrl(`/api/games/active/${userId}`))
   const body = (await response.json()) as ActiveGameResult & { message?: string }
   if (!response.ok) {
     throw new Error(body.message ?? 'Failed to load active game.')
@@ -96,7 +97,7 @@ export async function getActiveGame(userId: number): Promise<ActiveGameResult> {
 }
 
 export async function getHistoricalGames(): Promise<HistoricalGamesResult> {
-  const response = await fetch('/api/historical-games')
+  const response = await fetch(apiUrl('/api/historical-games'))
   const body = (await response.json()) as HistoricalGamesResult & { message?: string }
   if (!response.ok) {
     throw new Error(body.message ?? 'Failed to load historical games.')
@@ -106,7 +107,7 @@ export async function getHistoricalGames(): Promise<HistoricalGamesResult> {
 }
 
 export async function getUserGameHistory(userId: number): Promise<UserGameHistoryResult> {
-  const response = await fetch(`/api/users/${userId}/game-history`)
+  const response = await fetch(apiUrl(`/api/users/${userId}/game-history`))
   const body = (await response.json()) as UserGameHistoryResult & { message?: string }
   if (!response.ok) {
     throw new Error(body.message ?? 'Failed to load game history.')
@@ -116,7 +117,7 @@ export async function getUserGameHistory(userId: number): Promise<UserGameHistor
 }
 
 export async function importPgn(payload: ImportPgnPayload): Promise<ImportPgnResult> {
-  const response = await fetch('/api/uploads/pgn', {
+  const response = await fetch(apiUrl('/api/uploads/pgn'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -130,7 +131,7 @@ export async function importPgn(payload: ImportPgnPayload): Promise<ImportPgnRes
 }
 
 export async function getUploadedGames(userId: number): Promise<UploadedGamesListResult> {
-  const response = await fetch(`/api/users/${userId}/uploaded-games`)
+  const response = await fetch(apiUrl(`/api/users/${userId}/uploaded-games`))
   const body = (await response.json()) as UploadedGamesListResult & { message?: string }
   if (!response.ok) {
     throw new Error(body.message ?? 'Failed to load uploaded games.')
@@ -140,7 +141,7 @@ export async function getUploadedGames(userId: number): Promise<UploadedGamesLis
 }
 
 export async function deleteUploadedGame(gameId: number, userId: number): Promise<{ ok: boolean }> {
-  const response = await fetch(`/api/uploads/games/${gameId}?userId=${userId}`, {
+  const response = await fetch(apiUrl(`/api/uploads/games/${gameId}?userId=${userId}`), {
     method: 'DELETE',
   })
   const body = (await response.json()) as { ok?: boolean; message?: string }
@@ -152,7 +153,7 @@ export async function deleteUploadedGame(gameId: number, userId: number): Promis
 }
 
 export async function resignGame(gameId: number, userId: number): Promise<{ ok: boolean }> {
-  const response = await fetch('/api/games/resign', {
+  const response = await fetch(apiUrl('/api/games/resign'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

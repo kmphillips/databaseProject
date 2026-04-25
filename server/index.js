@@ -31,6 +31,35 @@ if (process.env.DB_SSL === 'true') {
 
 const pool = mysql.createPool(dbConfig)
 
+const configuredOrigins = (process.env.FRONTEND_ORIGINS ?? process.env.FRONTEND_ORIGIN ?? '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter((origin) => origin.length > 0)
+
+const allowedOrigins = new Set([
+  'http://localhost:5173',
+  ...configuredOrigins,
+])
+
+const AWARD_DESCRIPTIONS = {
+  'First Game': 'Played your first game.',
+  'Getting Started': 'Played 5 games.',
+  'Regular Player': 'Played 10 games.',
+  'Dedicated Player': 'Played 25 games.',
+  'Veteran Player': 'Played 50 games.',
+  Centurion: 'Played 100 games.',
+  'First Upload': 'Uploaded your first game.',
+  'Archivist I': 'Uploaded 5 games.',
+  'Archivist II': 'Uploaded 10 games.',
+  'Archivist III': 'Uploaded 25 games.',
+  'Archivist IV': 'Uploaded 50 games.',
+  'Archivist V': 'Uploaded 100 games.',
+  Centipawn: 'Played 100 moves.',
+  Tactician: 'Played 500 moves.',
+  Strategist: 'Played 1,000 moves.',
+  'Grand Volume': 'Played 10,000 moves.',
+}
+
 async function finalizeSiteGame(connection, gameId, gameResult) {
   await connection.execute(
     "UPDATE Games SET status = 'completed', result = ? WHERE game_id = ?",
@@ -65,7 +94,24 @@ async function finalizeSiteGame(connection, gameId, gameResult) {
   }
 }
 
-app.use(cors({ origin: 'http://localhost:5173' }))
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow server-to-server requests or curl calls with no Origin header.
+      if (!origin) {
+        callback(null, true)
+        return
+      }
+
+      if (allowedOrigins.has(origin)) {
+        callback(null, true)
+        return
+      }
+
+      callback(new Error(`Origin not allowed by CORS: ${origin}`))
+    },
+  }),
+)
 app.use(express.json({ limit: '5mb' }))
 
 app.get('/api/health', async (_request, response) => {
@@ -684,6 +730,50 @@ app.post('/api/users/:userId/change-password', async (request, response) => {
   }
 })
 
+app.post('/api/users/:userId/update-username', async (request, response) => {
+  const userId = Number(request.params.userId)
+  if (!Number.isFinite(userId) || userId <= 0) {
+    response.status(400).json({ message: 'A valid userId is required.' })
+    return
+  }
+
+  const { username } = request.body ?? {}
+  const nextUsername = String(username ?? '').trim()
+  if (!nextUsername) {
+    response.status(400).json({ message: 'username is required.' })
+    return
+  }
+  if (nextUsername.length < 3) {
+    response.status(400).json({ message: 'Username must be at least 3 characters.' })
+    return
+  }
+
+  try {
+    const [existingRows] = await pool.execute(
+      'SELECT user_id FROM Users WHERE username = ? AND user_id <> ? LIMIT 1',
+      [nextUsername, userId],
+    )
+    if (Array.isArray(existingRows) && existingRows.length > 0) {
+      response.status(409).json({ message: 'Username is already taken.' })
+      return
+    }
+
+    const [result] = await pool.execute(
+      'UPDATE Users SET username = ? WHERE user_id = ?',
+      [nextUsername, userId],
+    )
+    if (!result.affectedRows) {
+      response.status(404).json({ message: 'User not found.' })
+      return
+    }
+
+    response.json({ message: 'Username updated successfully.', username: nextUsername })
+  } catch (error) {
+    console.error('Update username request failed:', error)
+    response.status(500).json({ message: 'Server error while updating username.' })
+  }
+})
+
 app.get('/api/users/search', async (request, response) => {
   const { username, requesterId } = request.query
   if (!username || String(username).trim().length === 0) {
@@ -1120,11 +1210,39 @@ app.get('/api/users/:userId', async (request, response) => {
       ? favoriteOpeningsRows.map((row) => row.opening_name)
       : []
 
+    let awards = []
+    try {
+      const [awardRows] = await pool.execute(
+        `SELECT ua.award_name
+        FROM UserAwards ua
+        WHERE ua.user_id = ?
+        ORDER BY ua.award_name ASC`,
+        [userId],
+      )
+      awards = Array.isArray(awardRows)
+        ? awardRows.map((row) => ({
+          award_name: row.award_name,
+          description: AWARD_DESCRIPTIONS[row.award_name] ?? '',
+        }))
+        : []
+    } catch (awardError) {
+      // Allow profile loading even if awards tables are not initialized yet.
+      if (
+        awardError &&
+        typeof awardError === 'object' &&
+        'code' in awardError &&
+        awardError.code !== 'ER_NO_SUCH_TABLE'
+      ) {
+        throw awardError
+      }
+    }
+
     response.json({
       username: user.username,
       createdAt: user.created_at,
       rating: user.rating,
       favoriteOpenings,
+      awards,
     })
   } catch (error) {
     console.error('Get user request failed:', error)

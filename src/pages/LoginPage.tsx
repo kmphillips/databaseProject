@@ -3,6 +3,7 @@ import type { SyntheticEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../App'
+import { apiUrl } from '../config/api'
 
 export function LoginPage() {
   const navigate = useNavigate()
@@ -25,7 +26,7 @@ export function LoginPage() {
     setStatusType('')
 
     try {
-      const response = await fetch('/api/login', {
+      const response = await fetch(apiUrl('/api/login'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

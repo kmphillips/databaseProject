@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { SyntheticEvent } from 'react'
 import { useAuth } from '../App'
+import { apiUrl } from '../config/api'
 
 type Friend = {
   user_id: number
@@ -13,6 +14,10 @@ type FriendProfile = {
   createdAt: string
   rating: number
   favoriteOpenings: string[]
+  awards: {
+    award_name: string
+    description: string
+  }[]
 }
 
 type Tab = 'friends' | 'requests' | 'add'
@@ -42,7 +47,7 @@ export function FriendsPage() {
   useEffect(() => {
     if (!user) return
     setLoadingFriends(true)
-    fetch(`/api/friends/${user.userId}`)
+    fetch(apiUrl(`/api/friends/${user.userId}`))
       .then((res) => res.json())
       .then((data) => setFriends(data.friends ?? []))
       .catch(() => {})
@@ -52,7 +57,7 @@ export function FriendsPage() {
   useEffect(() => {
     if (!user) return
     setLoadingRequests(true)
-    fetch(`/api/friends/${user.userId}/pending`)
+    fetch(apiUrl(`/api/friends/${user.userId}/pending`))
       .then((res) => res.json())
       .then((data) => setPendingRequests(data.requests ?? []))
       .catch(() => {})
@@ -68,7 +73,7 @@ export function FriendsPage() {
     clearStatus()
 
     try {
-      const res = await fetch(`/api/users/search?username=${encodeURIComponent(searchQuery)}&requesterId=${user.userId}`)
+      const res = await fetch(apiUrl(`/api/users/search?username=${encodeURIComponent(searchQuery)}&requesterId=${user.userId}`))
       const data = await res.json()
       setSearchResults(data.users ?? [])
       if ((data.users ?? []).length === 0) {
@@ -86,7 +91,7 @@ export function FriendsPage() {
     clearStatus()
 
     try {
-      const res = await fetch('/api/friends/request', {
+      const res = await fetch(apiUrl('/api/friends/request'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.userId, friendUserId }),
@@ -105,7 +110,7 @@ export function FriendsPage() {
     clearStatus()
 
     try {
-      const res = await fetch('/api/friends/accept', {
+      const res = await fetch(apiUrl('/api/friends/accept'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.userId, friendUserId }),
@@ -127,7 +132,7 @@ export function FriendsPage() {
     clearStatus()
 
     try {
-      const res = await fetch('/api/friends/remove', {
+      const res = await fetch(apiUrl('/api/friends/remove'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.userId, friendUserId }),
@@ -151,7 +156,7 @@ export function FriendsPage() {
     clearStatus()
 
     try {
-      const res = await fetch('/api/friends/reject', {
+      const res = await fetch(apiUrl('/api/friends/reject'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.userId, friendUserId }),
@@ -178,7 +183,7 @@ export function FriendsPage() {
     setSelectedFriendId(friendId)
     clearStatus()
     try {
-      const res = await fetch(`/api/users/${friendId}`)
+      const res = await fetch(apiUrl(`/api/users/${friendId}`))
       const data = (await res.json()) as FriendProfile & { message?: string }
       if (!res.ok) {
         throw new Error(data.message ?? 'Could not load friend profile.')
@@ -301,6 +306,14 @@ export function FriendsPage() {
                   <strong>
                     {selectedFriendProfile.favoriteOpenings.length > 0
                       ? selectedFriendProfile.favoriteOpenings.join(', ')
+                      : 'None yet'}
+                  </strong>
+                </li>
+                <li>
+                  Awards:{' '}
+                  <strong>
+                    {selectedFriendProfile.awards.length > 0
+                      ? selectedFriendProfile.awards.map((award) => award.award_name).join(', ')
                       : 'None yet'}
                   </strong>
                 </li>

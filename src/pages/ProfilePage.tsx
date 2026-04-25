@@ -1,15 +1,20 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { SyntheticEvent } from 'react'
 import { useAuth } from '../App'
 import { GameReplayViewer } from '../features/chess/components/GameReplayViewer'
 import { getGameMoves, getUserGameHistory } from '../features/chess/services/chessApi'
 import type { PersistedMove, UserFinishedGame } from '../features/chess/types'
+import { apiUrl } from '../config/api'
 
 type UserProfile = {
   username: string
   createdAt: string
   rating: number
   favoriteOpenings: string[]
+  awards: {
+    award_name: string
+    description: string
+  }[]
 }
 
 function formatOutcome(result: string | null, yourColor: 'white' | 'black'): string {
@@ -27,7 +32,7 @@ function colorLabel(color: 'white' | 'black'): string {
 }
 
 export function ProfilePage() {
-  const { user } = useAuth()
+  const { user, login } = useAuth()
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [error, setError] = useState('')
   const [gameHistory, setGameHistory] = useState<UserFinishedGame[]>([])
@@ -39,13 +44,19 @@ export function ProfilePage() {
   const [showPasswordForm, setShowPasswordForm] = useState(false)
   const [pwSubmitting, setPwSubmitting] = useState(false)
   const [pwStatus, setPwStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [showUsernameForm, setShowUsernameForm] = useState(false)
+  const [usernameSubmitting, setUsernameSubmitting] = useState(false)
+  const [usernameStatus, setUsernameStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
   const [showFavoriteOpenings, setShowFavoriteOpenings] = useState(false)
   const [openingsSubmitting, setOpeningsSubmitting] = useState(false)
   const [openingsStatus, setOpeningsStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [historySort, setHistorySort] = useState<'newest' | 'oldest'>('newest')
+  const [historyColorFilter, setHistoryColorFilter] = useState<'all' | 'white' | 'black'>('all')
+  const [historyResultFilter, setHistoryResultFilter] = useState<'all' | 'win' | 'loss' | 'draw'>('all')
 
   async function refreshProfile(userId: number) {
-    const res = await fetch(`/api/users/${userId}`)
+    const res = await fetch(apiUrl(`/api/users/${userId}`))
     if (!res.ok) {
       throw new Error('Failed to load profile.')
     }
@@ -121,7 +132,7 @@ export function ProfilePage() {
     setPwStatus(null)
 
     try {
-      const res = await fetch(`/api/users/${user.userId}/change-password`, {
+      const res = await fetch(apiUrl(`/api/users/${user.userId}/change-password`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ currentPassword, newPassword }),
@@ -178,7 +189,7 @@ export function ProfilePage() {
     setOpeningsSubmitting(true)
     try {
       const endpoint = action === 'add' ? 'addFavoriteOpening' : 'deleteFavoriteOpening'
-      const res = await fetch(`/api/users/${user.userId}/${endpoint}`, {
+      const res = await fetch(apiUrl(`/api/users/${user.userId}/${endpoint}`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ openingName: favoriteOpening }),
@@ -210,6 +221,91 @@ export function ProfilePage() {
     ? new Date(profile.createdAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     : '—'
 
+  const filteredGameHistory = useMemo(() => {
+    const colorFiltered = gameHistory.filter((row) =>
+      historyColorFilter === 'all' ? true : row.your_color === historyColorFilter,
+    )
+
+    const resultFiltered = colorFiltered.filter((row) => {
+      if (historyResultFilter === 'all') {
+        return true
+      }
+      const outcome = formatOutcome(row.result, row.your_color).toLowerCase()
+      return outcome === historyResultFilter
+    })
+
+    const sorted = [...resultFiltered].sort((a, b) =>
+      historySort === 'newest' ? b.game_id - a.game_id : a.game_id - b.game_id,
+    )
+
+    return sorted
+  }, [gameHistory, historyColorFilter, historyResultFilter, historySort])
+
+  const historyStats = useMemo(() => {
+    let wins = 0
+    let losses = 0
+    let draws = 0
+    for (const game of filteredGameHistory) {
+      const outcome = formatOutcome(game.result, game.your_color)
+      if (outcome === 'Win') wins += 1
+      if (outcome === 'Loss') losses += 1
+      if (outcome === 'Draw') draws += 1
+    }
+    return {
+      played: filteredGameHistory.length,
+      wins,
+      losses,
+      draws,
+    }
+  }, [filteredGameHistory])
+
+  async function handleUpdateUsername(event: SyntheticEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!user) return
+    const form = event.currentTarget
+    const formData = new FormData(form)
+    const nextUsername = formData.get('newUsername')?.toString().trim() ?? ''
+
+    if (!nextUsername) {
+      setUsernameStatus({ type: 'error', message: 'Please enter a username.' })
+      return
+    }
+    if (nextUsername === user.username) {
+      setUsernameStatus({ type: 'error', message: 'New username matches current username.' })
+      return
+    }
+
+    setUsernameSubmitting(true)
+    setUsernameStatus(null)
+    try {
+      const res = await fetch(apiUrl(`/api/users/${user.userId}/update-username`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: nextUsername }),
+      })
+      const payload = (await res.json()) as { message?: string; username?: string }
+      if (!res.ok) {
+        throw new Error(payload.message ?? 'Failed to update username.')
+      }
+
+      login({
+        userId: user.userId,
+        username: payload.username ?? nextUsername,
+      })
+      await refreshProfile(user.userId)
+      setUsernameStatus({ type: 'success', message: payload.message ?? 'Username updated successfully.' })
+      setShowUsernameForm(false)
+      form.reset()
+    } catch (err) {
+      setUsernameStatus({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to update username.',
+      })
+    } finally {
+      setUsernameSubmitting(false)
+    }
+  }
+
   return (
     <section className="panel" aria-labelledby="profile-title">
       <div className="panel-header">
@@ -236,6 +332,25 @@ export function ProfilePage() {
           <p className="stat-label">Favorite Openings</p>
           <p className="profile-value">{profile?.favoriteOpenings.join(', ') ?? '—'}</p>
         </div>
+        <div>
+          <p className="stat-label">Awards</p>
+          <p className="profile-value">{profile?.awards.length ?? 0}</p>
+        </div>
+      </article>
+
+      <article className="panel-card">
+        <h3>User awards</h3>
+        {!profile || profile.awards.length === 0 ? (
+          <p className="fine-print">No awards earned yet.</p>
+        ) : (
+          <ul className="simple-list">
+            {profile.awards.map((award) => (
+              <li key={award.award_name}>
+                <strong>{award.award_name}</strong> — {award.description}
+              </li>
+            ))}
+          </ul>
+        )}
       </article>
 
       <article className="panel-card">
@@ -243,18 +358,59 @@ export function ProfilePage() {
         <p className="fine-print" style={{ marginBottom: '12px' }}>
           Completed games on this site. Select a row to replay moves on the board.
         </p>
+        <div className="top-nav" style={{ marginBottom: '12px' }}>
+          <label>
+            Sort
+            <select value={historySort} onChange={(event) => setHistorySort(event.target.value as 'newest' | 'oldest')}>
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+            </select>
+          </label>
+          <label>
+            Color
+            <select
+              value={historyColorFilter}
+              onChange={(event) => setHistoryColorFilter(event.target.value as 'all' | 'white' | 'black')}
+            >
+              <option value="all">All colors</option>
+              <option value="white">White</option>
+              <option value="black">Black</option>
+            </select>
+          </label>
+          <label>
+            Result
+            <select
+              value={historyResultFilter}
+              onChange={(event) => setHistoryResultFilter(event.target.value as 'all' | 'win' | 'loss' | 'draw')}
+            >
+              <option value="all">All results</option>
+              <option value="win">Win</option>
+              <option value="loss">Loss</option>
+              <option value="draw">Draw</option>
+            </select>
+          </label>
+        </div>
         {historyError && <p className="status-message error">{historyError}</p>}
-        {!historyError && gameHistory.length === 0 && (
+        {!historyError && (
+          <ul className="simple-list" style={{ marginBottom: '12px' }}>
+            <li>
+              Games played: <strong>{historyStats.played}</strong>
+            </li>
+            <li>
+              W / L / D: <strong>{historyStats.wins}</strong> / <strong>{historyStats.losses}</strong> / <strong>{historyStats.draws}</strong>
+            </li>
+          </ul>
+        )}
+        {!historyError && filteredGameHistory.length === 0 && (
           <p className="fine-print">No finished games yet.</p>
         )}
-        {gameHistory.length > 0 && (
+        {filteredGameHistory.length > 0 && (
           <div className="profile-history-layout">
             <div className="history-table-wrap">
               <table className="game-history-table">
                 <caption className="sr-only">Your completed games</caption>
                 <thead>
                   <tr>
-                    <th scope="col">Game</th>
                     <th scope="col">Opponent</th>
                     <th scope="col">You</th>
                     <th scope="col">Result</th>
@@ -262,7 +418,7 @@ export function ProfilePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {gameHistory.map((row) => {
+                  {filteredGameHistory.map((row) => {
                     const selected = selectedHistoryGame?.game_id === row.game_id
                     function toggleRow() {
                       setSelectedHistoryGame((current) =>
@@ -285,9 +441,6 @@ export function ProfilePage() {
                           }
                         }}
                       >
-                        <td>
-                          <span className="game-history-id">#{row.game_id}</span>
-                        </td>
                         <td>{row.opponent_username}</td>
                         <td>{colorLabel(row.your_color)}</td>
                         <td>{formatOutcome(row.result, row.your_color)}</td>
@@ -344,6 +497,31 @@ export function ProfilePage() {
       <article className="panel-card">
         <h3>Profile actions</h3>
         <ul className="simple-list">
+          <li>
+            <button
+              type="button"
+              className="link-action"
+              onClick={() => { setShowUsernameForm((v) => !v); setUsernameStatus(null) }}
+            >
+              {showUsernameForm ? 'Cancel' : 'Update username'}
+            </button>
+            {showUsernameForm && (
+              <form className="signup-form" style={{ marginTop: '16px' }} onSubmit={handleUpdateUsername}>
+                <label>
+                  New username
+                  <input type="text" name="newUsername" placeholder="Enter new username" minLength={3} required />
+                </label>
+                <button type="submit" className="primary-action" disabled={usernameSubmitting}>
+                  {usernameSubmitting ? 'Saving...' : 'Save username'}
+                </button>
+                {usernameStatus && (
+                  <p className={usernameStatus.type === 'success' ? 'status-message success' : 'status-message error'} role="status" aria-live="polite">
+                    {usernameStatus.message}
+                  </p>
+                )}
+              </form>
+            )}
+          </li>
           <li>
             <button
               type="button"

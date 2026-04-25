@@ -1,0 +1,13 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - Dockerfile.frontend
+      - -t
+      - gcr.io/cs4750db-492516/chess-web
+      - --build-arg
+      - VITE_API_BASE_URL=https://chess-api-779401914553.us-east4.run.app
+      - .
+images:
+  - gcr.io/cs4750db-492516/chess-web
