@@ -33,6 +33,18 @@ export function AppLayout() {
               Game
             </NavLink>
             <NavLink
+              to="/historical-games"
+              className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}
+            >
+              Historical games
+            </NavLink>
+            <NavLink
+              to="/pgn-upload"
+              className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}
+            >
+              PGN upload
+            </NavLink>
+            <NavLink
               to="/friends"
               className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}
             >

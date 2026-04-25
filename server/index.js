@@ -3,6 +3,7 @@ import cors from 'cors'
 import dotenv from 'dotenv'
 import express from 'express'
 import mysql from 'mysql2/promise'
+import { parseSinglePgnGame, splitPgnGames } from './pgnImport.js'
 
 dotenv.config()
 
@@ -65,7 +66,7 @@ async function finalizeSiteGame(connection, gameId, gameResult) {
 }
 
 app.use(cors({ origin: 'http://localhost:5173' }))
-app.use(express.json())
+app.use(express.json({ limit: '5mb' }))
 
 app.get('/api/health', async (_request, response) => {
   try {
@@ -276,6 +277,21 @@ app.get('/api/games/open', async (_request, response) => {
   } catch (error) {
     console.error('Open games request failed:', error)
     response.status(500).json({ message: 'Server error while loading open games.' })
+  }
+})
+
+app.get('/api/historical-games', async (_request, response) => {
+  try {
+    const [rows] = await pool.execute(
+      'SELECT g.game_id, g.result, g.time_control, hg.white_famous_player, hg.black_famous_player, hg.context FROM Games g JOIN HistoricalGame hg ON g.game_id = hg.game_id ORDER BY g.game_id ASC',
+    )
+
+    response.json({
+      games: Array.isArray(rows) ? rows : [],
+    })
+  } catch (error) {
+    console.error('Historical games request failed:', error)
+    response.status(500).json({ message: 'Server error while loading historical games.' })
   }
 })
 
@@ -798,6 +814,233 @@ app.post('/api/friends/reject', async (request, response) => {
   } catch (error) {
     console.error('Reject friend request failed:', error)
     response.status(500).json({ message: 'Server error while declining friend request.' })
+  }
+})
+
+function truncateForDb(value, maxLength) {
+  if (value == null || value === '') {
+    return null
+  }
+  const s = String(value).trim()
+  if (s.length === 0) {
+    return null
+  }
+  if (s.length <= maxLength) {
+    return s
+  }
+  return `${s.slice(0, Math.max(0, maxLength - 1))}…`
+}
+
+app.post('/api/uploads/pgn', async (request, response) => {
+  const { userId, userColor, pgnText } = request.body ?? {}
+  const uid = Number(userId)
+  if (!Number.isFinite(uid) || uid <= 0) {
+    response.status(400).json({ message: 'A valid userId is required.' })
+    return
+  }
+  if (userColor !== 'white' && userColor !== 'black') {
+    response.status(400).json({ message: 'userColor must be "white" or "black".' })
+    return
+  }
+  if (!pgnText || typeof pgnText !== 'string' || pgnText.trim().length === 0) {
+    response.status(400).json({ message: 'pgnText is required.' })
+    return
+  }
+
+  const chunks = splitPgnGames(pgnText)
+  if (chunks.length === 0) {
+    response.status(400).json({ message: 'No PGN games found in file.' })
+    return
+  }
+
+  const parsedGames = []
+  for (let i = 0; i < chunks.length; i++) {
+    try {
+      parsedGames.push(parseSinglePgnGame(chunks[i]))
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'Invalid PGN.'
+      response.status(400).json({
+        message: `Could not parse game ${i + 1} of ${chunks.length}: ${reason}`,
+      })
+      return
+    }
+  }
+
+  try {
+    const [userRows] = await pool.execute('SELECT user_id FROM Users WHERE user_id = ? LIMIT 1', [uid])
+    if (!Array.isArray(userRows) || userRows.length === 0) {
+      response.status(404).json({ message: 'User not found.' })
+      return
+    }
+  } catch (error) {
+    console.error('PGN upload user lookup failed:', error)
+    response.status(500).json({ message: 'Server error while validating user.' })
+    return
+  }
+
+  const connection = await pool.getConnection()
+  try {
+    await connection.beginTransaction()
+    const created = []
+
+    for (const game of parsedGames) {
+      const opponentFromPgn = userColor === 'white' ? game.black : game.white
+      const opponentName = truncateForDb(opponentFromPgn, 100) ?? 'Unknown'
+      const contextValue = truncateForDb(game.context, 255)
+
+      const timeControlValue = truncateForDb(game.timeControl, 30)
+
+      const [gamesInsertResult] = await connection.execute(
+        'INSERT INTO Games (created_by, status, result, time_control, is_rated) VALUES (?, ?, ?, ?, ?)',
+        [uid, 'completed', game.result, timeControlValue, false],
+      )
+      const gameId = Number(gamesInsertResult.insertId)
+      if (!Number.isFinite(gameId) || gameId <= 0) {
+        throw new Error('Could not determine game_id after insert.')
+      }
+
+      await connection.execute(
+        'INSERT INTO UploadedGame (game_id, uploaded_by, uploaded_at, opponent_name, context, user_color) VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?)',
+        [gameId, uid, opponentName, contextValue, userColor],
+      )
+
+      let moveNumber = 0
+      for (const san of game.sans) {
+        moveNumber += 1
+        await connection.execute(
+          'INSERT INTO Moves (game_id, move_number, notation, time) VALUES (?, ?, ?, NULL)',
+          [gameId, moveNumber, san],
+        )
+      }
+
+      created.push({
+        gameId,
+        white: game.white,
+        black: game.black,
+      })
+    }
+
+    await connection.commit()
+    response.status(201).json({
+      message: `Imported ${created.length} game(s).`,
+      imported: created.length,
+      games: created,
+    })
+  } catch (error) {
+    await connection.rollback()
+    console.error('PGN upload failed:', error)
+    response.status(500).json({ message: 'Server error while importing PGN.' })
+  } finally {
+    connection.release()
+  }
+})
+
+app.get('/api/users/:userId/uploaded-games', async (request, response) => {
+  const userId = Number(request.params.userId)
+  if (!Number.isFinite(userId) || userId <= 0) {
+    response.status(400).json({ message: 'A valid userId is required.' })
+    return
+  }
+
+  try {
+    const [rows] = await pool.execute(
+      `SELECT
+        ug.game_id,
+        g.result,
+        g.time_control,
+        ug.user_color,
+        ug.opponent_name,
+        ug.context,
+        ug.uploaded_at
+      FROM UploadedGame ug
+      JOIN Games g ON g.game_id = ug.game_id
+      WHERE ug.uploaded_by = ?
+      ORDER BY ug.game_id DESC`,
+      [userId],
+    )
+
+    response.json({
+      games: Array.isArray(rows) ? rows : [],
+    })
+  } catch (error) {
+    console.error('Uploaded games list failed:', error)
+    response.status(500).json({ message: 'Server error while loading uploaded games.' })
+  }
+})
+
+app.delete('/api/uploads/games/:gameId', async (request, response) => {
+  const gameId = Number(request.params.gameId)
+  const userId = Number(request.query.userId)
+  if (!Number.isFinite(gameId) || gameId <= 0) {
+    response.status(400).json({ message: 'A valid gameId is required.' })
+    return
+  }
+  if (!Number.isFinite(userId) || userId <= 0) {
+    response.status(400).json({ message: 'A valid userId query parameter is required.' })
+    return
+  }
+
+  const connection = await pool.getConnection()
+  try {
+    await connection.beginTransaction()
+
+    const [ownRows] = await connection.execute(
+      'SELECT game_id FROM UploadedGame WHERE game_id = ? AND uploaded_by = ? LIMIT 1 FOR UPDATE',
+      [gameId, userId],
+    )
+    if (!Array.isArray(ownRows) || ownRows.length === 0) {
+      await connection.rollback()
+      response.status(404).json({ message: 'Uploaded game not found or not owned by this user.' })
+      return
+    }
+
+    await connection.execute('DELETE FROM Moves WHERE game_id = ?', [gameId])
+    await connection.execute('DELETE FROM UploadedGame WHERE game_id = ?', [gameId])
+    await connection.execute('DELETE FROM Games WHERE game_id = ?', [gameId])
+
+    await connection.commit()
+    response.json({ ok: true, message: 'Game deleted.' })
+  } catch (error) {
+    await connection.rollback()
+    console.error('Delete uploaded game failed:', error)
+    response.status(500).json({ message: 'Server error while deleting game.' })
+  } finally {
+    connection.release()
+  }
+})
+
+app.get('/api/users/:userId/game-history', async (request, response) => {
+  const userId = Number(request.params.userId)
+  if (!Number.isFinite(userId) || userId <= 0) {
+    response.status(400).json({ message: 'A valid userId is required.' })
+    return
+  }
+
+  try {
+    const [rows] = await pool.execute(
+      `SELECT
+        g.game_id,
+        g.status,
+        g.result,
+        g.time_control,
+        h_me.color AS your_color,
+        COALESCE(opp.username, 'Unknown') AS opponent_username
+      FROM Has h_me
+      JOIN Games g ON g.game_id = h_me.game_id
+      JOIN SiteGame sg ON sg.game_id = g.game_id
+      LEFT JOIN Has h_opp ON h_opp.game_id = g.game_id AND h_opp.user_id <> h_me.user_id
+      LEFT JOIN Users opp ON opp.user_id = h_opp.user_id
+      WHERE h_me.user_id = ? AND g.status = 'completed'
+      ORDER BY g.game_id DESC`,
+      [userId],
+    )
+
+    response.json({
+      games: Array.isArray(rows) ? rows : [],
+    })
+  } catch (error) {
+    console.error('User game history request failed:', error)
+    response.status(500).json({ message: 'Server error while loading game history.' })
   }
 })
 

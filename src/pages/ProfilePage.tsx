@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { SyntheticEvent } from 'react'
 import { useAuth } from '../App'
+import { GameReplayViewer } from '../features/chess/components/GameReplayViewer'
+import { getGameMoves, getUserGameHistory } from '../features/chess/services/chessApi'
+import type { PersistedMove, UserFinishedGame } from '../features/chess/types'
 
 type UserProfile = {
   username: string
@@ -8,10 +11,29 @@ type UserProfile = {
   rating: number
 }
 
+function formatOutcome(result: string | null, yourColor: 'white' | 'black'): string {
+  if (result === 'draw') {
+    return 'Draw'
+  }
+  if (result === 'white' || result === 'black') {
+    return result === yourColor ? 'Win' : 'Loss'
+  }
+  return '—'
+}
+
+function colorLabel(color: 'white' | 'black'): string {
+  return color === 'white' ? 'White' : 'Black'
+}
+
 export function ProfilePage() {
   const { user } = useAuth()
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [error, setError] = useState('')
+  const [gameHistory, setGameHistory] = useState<UserFinishedGame[]>([])
+  const [historyError, setHistoryError] = useState('')
+  const [selectedHistoryGame, setSelectedHistoryGame] = useState<UserFinishedGame | null>(null)
+  const [replayMoves, setReplayMoves] = useState<PersistedMove[]>([])
+  const [replayLoading, setReplayLoading] = useState(false)
 
   const [showPasswordForm, setShowPasswordForm] = useState(false)
   const [pwSubmitting, setPwSubmitting] = useState(false)
@@ -28,6 +50,41 @@ export function ProfilePage() {
       .then((data) => setProfile(data))
       .catch(() => setError('Could not load profile data.'))
   }, [user])
+
+  useEffect(() => {
+    if (!user) {
+      return
+    }
+
+    void (async () => {
+      try {
+        const payload = await getUserGameHistory(user.userId)
+        setGameHistory(payload.games)
+        setHistoryError('')
+      } catch (err) {
+        setHistoryError(err instanceof Error ? err.message : 'Could not load game history.')
+      }
+    })()
+  }, [user])
+
+  useEffect(() => {
+    if (!selectedHistoryGame) {
+      setReplayMoves([])
+      return
+    }
+
+    void (async () => {
+      setReplayLoading(true)
+      try {
+        const payload = await getGameMoves(selectedHistoryGame.game_id)
+        setReplayMoves(payload.moves)
+      } catch {
+        setReplayMoves([])
+      } finally {
+        setReplayLoading(false)
+      }
+    })()
+  }, [selectedHistoryGame])
 
   async function handleChangePassword(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -99,6 +156,109 @@ export function ProfilePage() {
           <p className="stat-label">Member since</p>
           <p className="profile-value">{memberSince}</p>
         </div>
+      </article>
+
+      <article className="panel-card">
+        <h3>Game history</h3>
+        <p className="fine-print" style={{ marginBottom: '12px' }}>
+          Completed games on this site. Select a row to replay moves on the board.
+        </p>
+        {historyError && <p className="status-message error">{historyError}</p>}
+        {!historyError && gameHistory.length === 0 && (
+          <p className="fine-print">No finished games yet.</p>
+        )}
+        {gameHistory.length > 0 && (
+          <div className="profile-history-layout">
+            <div className="history-table-wrap">
+              <table className="game-history-table">
+                <caption className="sr-only">Your completed games</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Game</th>
+                    <th scope="col">Opponent</th>
+                    <th scope="col">You</th>
+                    <th scope="col">Result</th>
+                    <th scope="col">Clock</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {gameHistory.map((row) => {
+                    const selected = selectedHistoryGame?.game_id === row.game_id
+                    function toggleRow() {
+                      setSelectedHistoryGame((current) =>
+                        current?.game_id === row.game_id ? null : row,
+                      )
+                    }
+                    return (
+                      <tr
+                        key={row.game_id}
+                        tabIndex={0}
+                        role="button"
+                        aria-pressed={selected}
+                        aria-label={`Game ${row.game_id}, opponent ${row.opponent_username}, ${formatOutcome(row.result, row.your_color)}`}
+                        className={selected ? 'game-history-row game-history-row-selected' : 'game-history-row'}
+                        onClick={toggleRow}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            toggleRow()
+                          }
+                        }}
+                      >
+                        <td>
+                          <span className="game-history-id">#{row.game_id}</span>
+                        </td>
+                        <td>{row.opponent_username}</td>
+                        <td>{colorLabel(row.your_color)}</td>
+                        <td>{formatOutcome(row.result, row.your_color)}</td>
+                        <td>{row.time_control ?? '—'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {selectedHistoryGame && (
+              <div className="panel-card profile-replay-card">
+                <div className="profile-replay-header">
+                  <h4>
+                    Game #{selectedHistoryGame.game_id} vs {selectedHistoryGame.opponent_username}
+                  </h4>
+                  <button
+                    type="button"
+                    className="link-action"
+                    onClick={() => setSelectedHistoryGame(null)}
+                  >
+                    Close
+                  </button>
+                </div>
+                <p className="fine-print">
+                  You played {colorLabel(selectedHistoryGame.your_color)} —{' '}
+                  {formatOutcome(selectedHistoryGame.result, selectedHistoryGame.your_color)}
+                </p>
+                {replayLoading ? (
+                  <p className="fine-print">Loading moves…</p>
+                ) : user ? (
+                  <GameReplayViewer
+                    moves={replayMoves}
+                    whiteLabel={
+                      selectedHistoryGame.your_color === 'white'
+                        ? user.username
+                        : selectedHistoryGame.opponent_username
+                    }
+                    blackLabel={
+                      selectedHistoryGame.your_color === 'black'
+                        ? user.username
+                        : selectedHistoryGame.opponent_username
+                    }
+                    boardOrientation={selectedHistoryGame.your_color}
+                  />
+                ) : null}
+              </div>
+            )}
+          </div>
+        )}
       </article>
 
       <article className="panel-card">

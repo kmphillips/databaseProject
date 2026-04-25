@@ -6,6 +6,8 @@ import { AppLayout } from './components/AppLayout'
 import { CreateAccountPage } from './pages/CreateAccountPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { GamePage } from './pages/GamePage'
+import { HistoricalGamesPage } from './pages/HistoricalGamesPage'
+import { PgnUploadPage } from './pages/PgnUploadPage'
 import { LoginPage } from './pages/LoginPage'
 import { FriendsPage } from './pages/FriendsPage'
 import { ProfilePage } from './pages/ProfilePage'
@@ -62,6 +64,8 @@ function App() {
           <Route path="/create-account" element={<GuestRoute><CreateAccountPage /></GuestRoute>} />
           <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
           <Route path="/game" element={<ProtectedRoute><GamePage /></ProtectedRoute>} />
+          <Route path="/historical-games" element={<ProtectedRoute><HistoricalGamesPage /></ProtectedRoute>} />
+          <Route path="/pgn-upload" element={<ProtectedRoute><PgnUploadPage /></ProtectedRoute>} />
           <Route path="/friends" element={<ProtectedRoute><FriendsPage /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to={user ? '/game' : '/login'} replace />} />
