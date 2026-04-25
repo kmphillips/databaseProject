@@ -9,11 +9,25 @@ import {
   getActiveGame,
   getGameMoves,
   getOpenGames,
+  getUserGameHistory,
   joinGame,
   resignGame,
   startGame,
 } from '../features/chess/services/chessApi'
-import type { OpenSiteGame, PersistedMove } from '../features/chess/types'
+import type { OpenSiteGame, PersistedMove, UserFinishedGame } from '../features/chess/types'
+
+function buildCompletionMessage(game: UserFinishedGame): string {
+  if (game.result === 'draw') {
+    return `Game over: Draw against ${game.opponent_username}.`
+  }
+  if (game.result === game.your_color) {
+    return `Game over: You won against ${game.opponent_username}.`
+  }
+  if (game.result === 'white' || game.result === 'black') {
+    return `Game over: You lost against ${game.opponent_username}.`
+  }
+  return `Game over against ${game.opponent_username}.`
+}
 
 export function GamePage() {
   const sessionUser = getSessionUser()
@@ -32,6 +46,7 @@ export function GamePage() {
   const [openGames, setOpenGames] = useState<OpenSiteGame[]>([])
   const [persistedMoveHistory, setPersistedMoveHistory] = useState<PersistedMove[]>([])
   const [currentMoveIndex, setCurrentMoveIndex] = useState(0)
+  const [completionMessageGameId, setCompletionMessageGameId] = useState<number | null>(null)
 
   const refreshOpenGames = useCallback(async () => {
     try {
@@ -91,23 +106,44 @@ export function GamePage() {
       try {
         const payload = await getActiveGame(userId)
         if (!payload.game) {
-          setActiveGameId(null)
-          setGameStatus('waiting')
-          setPlayerColor(null)
-          setOpponentUsername('Waiting for opponent')
-          setPersistedMoveHistory([])
-          setCurrentMoveIndex(0)
+          if (activeGameId) {
+            // Keep final board/moves visible when a just-finished game is no longer "active".
+            setGameStatus('completed')
+            if (completionMessageGameId !== activeGameId) {
+              try {
+                const historyPayload = await getUserGameHistory(userId)
+                const finishedGame = historyPayload.games.find((game) => game.game_id === activeGameId)
+                if (finishedGame) {
+                  setStartGameStatus(buildCompletionMessage(finishedGame))
+                } else {
+                  setStartGameStatus('Game completed. Review the final position and move list.')
+                }
+              } catch {
+                setStartGameStatus('Game completed. Review the final position and move list.')
+              } finally {
+                setCompletionMessageGameId(activeGameId)
+              }
+            }
+          } else {
+            setActiveGameId(null)
+            setGameStatus('waiting')
+            setPlayerColor(null)
+            setOpponentUsername('Waiting for opponent')
+            setPersistedMoveHistory([])
+            setCurrentMoveIndex(0)
+          }
           return
         }
         setActiveGameId(payload.game.gameId)
         setGameStatus(payload.game.status as 'waiting' | 'in_progress' | 'completed')
         setPlayerColor(payload.game.playerColor)
         setOpponentUsername(payload.game.opponentUsername)
+        setCompletionMessageGameId(null)
       } catch {
         // Silent fail keeps existing active state.
       }
     },
-    [],
+    [activeGameId, completionMessageGameId],
   )
 
   const reviewFen = useMemo(() => {
@@ -123,6 +159,7 @@ export function GamePage() {
   }, [persistedMoveHistory, currentMoveIndex])
 
   const isViewingLatestMove = currentMoveIndex === persistedMoveHistory.length
+  const hasGameContext = Boolean(activeGameId)
   const isUsersTurn = playerColor !== null && turnColor === playerColor
   const canPlay = useMemo(
     () =>
@@ -197,6 +234,7 @@ export function GamePage() {
       setOpponentUsername(result.game.opponentUsername)
       setPersistedMoveHistory([])
       setCurrentMoveIndex(0)
+      setCompletionMessageGameId(null)
       resetGame()
       await refreshPersistedMoves(result.game.gameId)
       await refreshOpenGames()
@@ -236,6 +274,7 @@ export function GamePage() {
       setOpponentUsername(result.game.opponentUsername)
       setPersistedMoveHistory([])
       setCurrentMoveIndex(0)
+      setCompletionMessageGameId(null)
       resetGame()
       await refreshPersistedMoves(result.game.gameId)
       await refreshOpenGames()
@@ -269,6 +308,7 @@ export function GamePage() {
       setOpponentUsername(result.game.opponentUsername)
       setPersistedMoveHistory([])
       setCurrentMoveIndex(0)
+      setCompletionMessageGameId(null)
       resetGame()
       await refreshPersistedMoves(result.game.gameId)
       await refreshOpenGames()
@@ -304,6 +344,18 @@ export function GamePage() {
     }
   }
 
+  function handleReturnToGameSetup() {
+    setActiveGameId(null)
+    setGameStatus('waiting')
+    setPlayerColor(null)
+    setOpponentUsername('Waiting for opponent')
+    setPersistedMoveHistory([])
+    setCurrentMoveIndex(0)
+    setStartGameStatus('')
+    setCompletionMessageGameId(null)
+    resetGame()
+  }
+
   if (!sessionUser) {
     return <Navigate to="/login" replace />
   }
@@ -315,108 +367,145 @@ export function GamePage() {
         <h2 id="game-title">Game</h2>
       </div>
 
-      <div className="game-layout">
-        <article className="panel-card">
-          <h3>Live board</h3>
-          <p className="fine-print">Top: {opponentUsername}</p>
-          <ChessGameBoard
-            fen={isViewingLatestMove ? fen : reviewFen}
-            onPieceDrop={onPieceDrop}
-            canPlay={canPlay}
-            playerColor={playerColor}
-          />
-          <p className="fine-print">Bottom: {sessionUser.username}</p>
-          <div className="top-nav">
-            <button
-              type="button"
-              className="secondary-action"
-              onClick={() => setCurrentMoveIndex((prev) => Math.max(0, prev - 1))}
-              disabled={currentMoveIndex === 0}
-            >
-              Previous move
-            </button>
-            <button
-              type="button"
-              className="secondary-action"
-              onClick={() =>
-                setCurrentMoveIndex((prev) =>
-                  Math.min(persistedMoveHistory.length, prev + 1),
-                )
-              }
-              disabled={currentMoveIndex >= persistedMoveHistory.length}
-            >
-              Next move
-            </button>
-          </div>
-        </article>
+      <div className={hasGameContext ? 'game-layout game-layout-active' : 'game-layout game-layout-setup-only'}>
+        {!hasGameContext && (
+          <article className="panel-card">
+            <h3>Game setup</h3>
+            <p className="fine-print">Logged in as: {sessionUser.username}</p>
+            <form className="signup-form" onSubmit={handleCreateGame}>
+              <label>
+                Your color
+                <select
+                  value={creatorColorChoice}
+                  onChange={(event) =>
+                    setCreatorColorChoice(
+                      event.target.value as 'white' | 'black' | 'random',
+                    )
+                  }
+                >
+                  <option value="random">Random</option>
+                  <option value="white">White</option>
+                  <option value="black">Black</option>
+                </select>
+              </label>
+              <button type="submit" className="primary-action" disabled={isCreatingGame}>
+                {isCreatingGame ? 'Creating game...' : 'Create open game'}
+              </button>
+            </form>
 
-        <article className="panel-card">
-          <h3>Game setup</h3>
-          <p className="fine-print">Logged in as: {sessionUser.username}</p>
-          <form className="signup-form" onSubmit={handleCreateGame}>
-            <label>
-              Your color
-              <select
-                value={creatorColorChoice}
-                onChange={(event) =>
-                  setCreatorColorChoice(
-                    event.target.value as 'white' | 'black' | 'random',
+            <form className="signup-form" onSubmit={handleJoinByCode}>
+              <label>
+                Join by invite code
+                <input
+                  type="text"
+                  value={joinInviteCode}
+                  onChange={(event) => setJoinInviteCode(event.target.value)}
+                  placeholder="LOCALXXXXXXXXXXXX"
+                  required
+                />
+              </label>
+              <button type="submit" className="secondary-action" disabled={isJoiningGame}>
+                {isJoiningGame ? 'Joining...' : 'Join game'}
+              </button>
+            </form>
+
+            {startGameStatus && <p className="fine-print">{startGameStatus}</p>}
+
+            <h3>Open games</h3>
+            {openGames.length === 0 ? (
+              <p className="fine-print">No open games right now.</p>
+            ) : (
+              <ul className="simple-list">
+                {openGames.map((openGame) => (
+                  <li key={openGame.game_id}>
+                    {openGame.creator_username} - {openGame.invite_code}
+                    <button
+                      type="button"
+                      className="secondary-action"
+                      onClick={() => {
+                        void handleJoinFromList(openGame.invite_code)
+                      }}
+                      disabled={isJoiningGame}
+                    >
+                      Join
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </article>
+        )}
+
+        {hasGameContext && (
+          <article className="panel-card">
+            <div className="live-board-header">
+              <h3>Live board</h3>
+              {startGameStatus && (
+                <p
+                  className={
+                    gameStatus === 'completed'
+                      ? 'status-message success'
+                      : 'fine-print'
+                  }
+                  role="status"
+                  aria-live="polite"
+                >
+                  {startGameStatus}
+                </p>
+              )}
+            </div>
+            <p className="fine-print">Top: {opponentUsername}</p>
+            <ChessGameBoard
+              fen={isViewingLatestMove ? fen : reviewFen}
+              onPieceDrop={onPieceDrop}
+              canPlay={canPlay}
+              playerColor={playerColor}
+            />
+            <p className="fine-print">Bottom: {sessionUser.username}</p>
+            <div className="top-nav">
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={() => setCurrentMoveIndex((prev) => Math.max(0, prev - 1))}
+                disabled={currentMoveIndex === 0}
+              >
+                Previous move
+              </button>
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={() =>
+                  setCurrentMoveIndex((prev) =>
+                    Math.min(persistedMoveHistory.length, prev + 1),
                   )
                 }
+                disabled={currentMoveIndex >= persistedMoveHistory.length}
               >
-                <option value="random">Random</option>
-                <option value="white">White</option>
-                <option value="black">Black</option>
-              </select>
-            </label>
-            <button type="submit" className="primary-action" disabled={isCreatingGame}>
-              {isCreatingGame ? 'Creating game...' : 'Create open game'}
-            </button>
-          </form>
+                Next move
+              </button>
+            </div>
+          </article>
+        )}
 
-          <form className="signup-form" onSubmit={handleJoinByCode}>
-            <label>
-              Join by invite code
-              <input
-                type="text"
-                value={joinInviteCode}
-                onChange={(event) => setJoinInviteCode(event.target.value)}
-                placeholder="LOCALXXXXXXXXXXXX"
-                required
-              />
-            </label>
-            <button type="submit" className="secondary-action" disabled={isJoiningGame}>
-              {isJoiningGame ? 'Joining...' : 'Join game'}
-            </button>
-          </form>
+        {hasGameContext && (
+          <article className="panel-card">
+            <h3>Move history</h3>
+            {persistedMoveHistory.length === 0 ? (
+              <p className="fine-print">No moves yet. Make the first move on the board.</p>
+            ) : (
+              <ol className="move-history-list">
+                {persistedMoveHistory.map((move) => (
+                  <li key={`${move.move_number}-${move.notation}`}>
+                    {move.notation}
+                  </li>
+                ))}
+              </ol>
+            )}
+          </article>
+        )}
 
-          {startGameStatus && <p className="fine-print">{startGameStatus}</p>}
-
-          <h3>Open games</h3>
-          {openGames.length === 0 ? (
-            <p className="fine-print">No open games right now.</p>
-          ) : (
-            <ul className="simple-list">
-              {openGames.map((openGame) => (
-                <li key={openGame.game_id}>
-                  {openGame.creator_username} - {openGame.invite_code}
-                  <button
-                    type="button"
-                    className="secondary-action"
-                    onClick={() => {
-                      void handleJoinFromList(openGame.invite_code)
-                    }}
-                    disabled={isJoiningGame}
-                  >
-                    Join
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </article>
-
-        <article className="panel-card">
+        {hasGameContext && (
+          <article className="panel-card">
           <h3>Game state</h3>
           <ul className="simple-list game-meta-list">
             <li>
@@ -453,22 +542,17 @@ export function GamePage() {
           >
             {isResigningGame ? 'Resigning...' : 'Resign game'}
           </button>
-        </article>
-
-        <article className="panel-card">
-          <h3>Move history</h3>
-          {persistedMoveHistory.length === 0 ? (
-            <p className="fine-print">No moves yet. Make the first move on the board.</p>
-          ) : (
-            <ol className="move-history-list">
-              {persistedMoveHistory.map((move) => (
-                <li key={`${move.move_number}-${move.notation}`}>
-                  {move.notation}
-                </li>
-              ))}
-            </ol>
+          {gameStatus === 'completed' && (
+            <button
+              type="button"
+              className="primary-action"
+              onClick={handleReturnToGameSetup}
+            >
+              Back to game setup
+            </button>
           )}
         </article>
+        )}
       </div>
     </section>
   )

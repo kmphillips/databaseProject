@@ -41,17 +41,25 @@ export function ProfilePage() {
   const [pwStatus, setPwStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
   const [showFavoriteOpenings, setShowFavoriteOpenings] = useState(false)
+  const [openingsSubmitting, setOpeningsSubmitting] = useState(false)
+  const [openingsStatus, setOpeningsStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+
+  async function refreshProfile(userId: number) {
+    const res = await fetch(`/api/users/${userId}`)
+    if (!res.ok) {
+      throw new Error('Failed to load profile.')
+    }
+    const data = (await res.json()) as UserProfile
+    setProfile(data)
+    setError('')
+  }
 
   useEffect(() => {
     if (!user) return
 
-    fetch(`/api/users/${user.userId}`)
-      .then((res) => {
-        if (!res.ok) throw new Error('Failed to load profile.')
-        return res.json() as Promise<UserProfile>
-      })
-      .then((data) => setProfile(data))
-      .catch(() => setError('Could not load profile data.'))
+    void refreshProfile(user.userId).catch(() => {
+      setError('Could not load profile data.')
+    })
   }, [user])
 
   useEffect(() => {
@@ -142,46 +150,60 @@ export function ProfilePage() {
     const openingInput = formData.get('openingInput')?.toString() ?? ''
     const favoriteOpening = openingInput.trim()
     const action = formData.get('action')?.toString()
-    //console.log('handleEditOpenings', { favoriteOpening, action })
-      if (action === 'add') {
-        if (favoriteOpening.length === 0) {
-          setError('Please enter an opening name to add.')
-          return
-        }
-        if (profile?.favoriteOpenings.includes(favoriteOpening)) {
-          setError('This opening is already in your favorites.')
-          return
-        }
-        try {
-          const res = await fetch(`/api/users/${user?.userId}/addFavoriteOpening`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ openingName: favoriteOpening }),
-          })
-        } catch (err) {
-          setError('Failed to add favorite opening.')
-        }
+    setOpeningsStatus(null)
+    setError('')
+
+    if (action !== 'add' && action !== 'remove') {
+      setOpeningsStatus({ type: 'error', message: 'Choose whether to add or remove.' })
+      return
+    }
+    if (favoriteOpening.length === 0) {
+      setOpeningsStatus({
+        type: 'error',
+        message: action === 'add'
+          ? 'Please enter an opening name to add.'
+          : 'Please enter an opening name to remove.',
+      })
+      return
+    }
+    if (action === 'add' && profile?.favoriteOpenings.includes(favoriteOpening)) {
+      setOpeningsStatus({ type: 'error', message: 'This opening is already in your favorites.' })
+      return
+    }
+    if (action === 'remove' && !profile?.favoriteOpenings.includes(favoriteOpening)) {
+      setOpeningsStatus({ type: 'error', message: 'This opening is not in your favorites.' })
+      return
+    }
+
+    setOpeningsSubmitting(true)
+    try {
+      const endpoint = action === 'add' ? 'addFavoriteOpening' : 'deleteFavoriteOpening'
+      const res = await fetch(`/api/users/${user.userId}/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ openingName: favoriteOpening }),
+      })
+      const payload = (await res.json()) as { message?: string }
+      if (!res.ok) {
+        throw new Error(payload.message ?? 'Favorite openings update failed.')
       }
-      if (action === 'remove') {
-        if (favoriteOpening.length === 0) {
-          setError('Please enter an opening name to remove.')
-          return
-        }
-        if (!profile?.favoriteOpenings.includes(favoriteOpening)) {
-          setError('This opening is not in your favorites.')
-          return
-        }
-        try {          
-            const res = await fetch(`/api/users/${user?.userId}/deleteFavoriteOpening`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ openingName: favoriteOpening }),
-          })
-        }
-         catch (err) {
-          setError('Failed to remove favorite opening.')
-        }
-      } 
+
+      await refreshProfile(user.userId)
+      setOpeningsStatus({
+        type: 'success',
+        message: payload.message ?? (action === 'add'
+          ? 'Favorite opening added successfully.'
+          : 'Favorite opening removed successfully.'),
+      })
+      form.reset()
+    } catch (err) {
+      setOpeningsStatus({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Favorite openings update failed.',
+      })
+    } finally {
+      setOpeningsSubmitting(false)
+    }
   }
 
   const memberSince = profile?.createdAt
@@ -360,7 +382,7 @@ export function ProfilePage() {
             <button
               type="button"
               className="link-action"
-              onClick={() => { setShowFavoriteOpenings((v) => !v)  }}
+              onClick={() => { setShowFavoriteOpenings((v) => !v); setOpeningsStatus(null) }}
             >
               {showFavoriteOpenings ? 'Cancel' : 'Edit favorite openings'}
             </button>
@@ -378,10 +400,14 @@ export function ProfilePage() {
                     <option value="remove">Remove from favorites</option>
                   </select>
                 </label>
-                <button type="submit" className="primary-action">
-                  Submit
+                <button type="submit" className="primary-action" disabled={openingsSubmitting}>
+                  {openingsSubmitting ? 'Saving...' : 'Submit'}
                 </button>
-                
+                {openingsStatus && (
+                  <p className={openingsStatus.type === 'success' ? 'status-message success' : 'status-message error'} role="status" aria-live="polite">
+                    {openingsStatus.message}
+                  </p>
+                )}
               </form>
             )}
 

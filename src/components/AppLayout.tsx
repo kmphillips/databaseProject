@@ -21,28 +21,22 @@ export function AppLayout() {
 
           <nav aria-label="Primary navigation" className="top-nav">
             <NavLink
-              to="/dashboard"
-              className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}
-            >
-              Dashboard
-            </NavLink>
-            <NavLink
               to="/game"
               className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}
             >
-              Game
+              Play Game
             </NavLink>
             <NavLink
               to="/historical-games"
               className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}
             >
-              Historical games
+              Historical Games
             </NavLink>
             <NavLink
               to="/pgn-upload"
               className={({ isActive }) => isActive ? 'nav-link nav-link-active' : 'nav-link'}
             >
-              PGN upload
+              Upload PGN
             </NavLink>
             <NavLink
               to="/friends"

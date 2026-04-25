@@ -3,6 +3,19 @@ import { getGameMoves, getHistoricalGames } from '../features/chess/services/che
 import { GameReplayViewer } from '../features/chess/components/GameReplayViewer'
 import type { HistoricalGame, PersistedMove } from '../features/chess/types'
 
+function formatHistoricalResult(result: string | null): string {
+  if (result === 'white') {
+    return 'White won'
+  }
+  if (result === 'black') {
+    return 'Black won'
+  }
+  if (result === 'draw') {
+    return 'Draw'
+  }
+  return 'Unknown'
+}
+
 export function HistoricalGamesPage() {
   const [historicalGames, setHistoricalGames] = useState<HistoricalGame[]>([])
   const [selectedGameId, setSelectedGameId] = useState<number | null>(null)
@@ -82,6 +95,9 @@ export function HistoricalGamesPage() {
               </li>
               <li>
                 Context: <strong>{selectedGame.context ?? 'N/A'}</strong>
+              </li>
+              <li>
+                Result: <strong>{formatHistoricalResult(selectedGame.result)}</strong>
               </li>
             </ul>
           )}

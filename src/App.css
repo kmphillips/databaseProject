@@ -156,6 +156,31 @@
   grid-template-columns: 1.5fr 1fr;
 }
 
+.game-layout-setup-only {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.game-layout-active {
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+}
+
+.live-board-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.live-board-header h3 {
+  margin-bottom: 0;
+}
+
+.live-board-header .status-message,
+.live-board-header .fine-print {
+  margin-left: auto;
+}
+
 .profile-history-layout {
   display: grid;
   gap: 16px;
@@ -535,6 +560,13 @@
   flex-wrap: wrap;
 }
 
+.friends-profile-layout {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.9fr);
+  align-items: start;
+}
+
 .friends-list {
   list-style: none;
   padding: 0;
@@ -560,6 +592,22 @@
   font-weight: 600;
   color: var(--text-h);
   flex: 1;
+}
+
+.friend-name-button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-h);
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.friend-name-button:hover,
+.friend-name-button:focus-visible {
+  color: var(--accent);
 }
 
 .friends-actions {
@@ -603,7 +651,8 @@
   .stats-grid,
   .profile-grid,
   .game-layout,
-  .profile-history-layout {
+  .profile-history-layout,
+  .friends-profile-layout {
     grid-template-columns: 1fr;
   }
 }

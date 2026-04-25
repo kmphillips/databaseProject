@@ -8,6 +8,13 @@ type Friend = {
   rating: number
 }
 
+type FriendProfile = {
+  username: string
+  createdAt: string
+  rating: number
+  favoriteOpenings: string[]
+}
+
 type Tab = 'friends' | 'requests' | 'add'
 
 export function FriendsPage() {
@@ -22,8 +29,11 @@ export function FriendsPage() {
   const [loadingFriends, setLoadingFriends] = useState(false)
   const [loadingRequests, setLoadingRequests] = useState(false)
   const [searching, setSearching] = useState(false)
+  const [loadingFriendProfile, setLoadingFriendProfile] = useState(false)
 
   const [actionStatus, setActionStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [selectedFriendProfile, setSelectedFriendProfile] = useState<FriendProfile | null>(null)
+  const [selectedFriendId, setSelectedFriendId] = useState<number | null>(null)
 
   function clearStatus() {
     setActionStatus(null)
@@ -126,6 +136,10 @@ export function FriendsPage() {
       if (!res.ok) throw new Error(data.message)
 
       setFriends((prev) => prev.filter((f) => f.user_id !== friendUserId))
+      if (selectedFriendId === friendUserId) {
+        setSelectedFriendId(null)
+        setSelectedFriendProfile(null)
+      }
       setActionStatus({ type: 'success', message: data.message })
     } catch (err) {
       setActionStatus({ type: 'error', message: err instanceof Error ? err.message : 'Failed to remove friend.' })
@@ -157,6 +171,29 @@ export function FriendsPage() {
     clearStatus()
     setSearchResults([])
     setSearchQuery('')
+  }
+
+  async function handleViewFriendProfile(friendId: number) {
+    setLoadingFriendProfile(true)
+    setSelectedFriendId(friendId)
+    clearStatus()
+    try {
+      const res = await fetch(`/api/users/${friendId}`)
+      const data = (await res.json()) as FriendProfile & { message?: string }
+      if (!res.ok) {
+        throw new Error(data.message ?? 'Could not load friend profile.')
+      }
+      setSelectedFriendProfile(data)
+    } catch (err) {
+      setSelectedFriendProfile(null)
+      setSelectedFriendId(null)
+      setActionStatus({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Could not load friend profile.',
+      })
+    } finally {
+      setLoadingFriendProfile(false)
+    }
   }
 
   return (
@@ -201,25 +238,78 @@ export function FriendsPage() {
       )}
 
       {tab === 'friends' && (
-        <article className="panel-card">
-          {loadingFriends ? (
-            <p className="fine-print">Loading friends...</p>
-          ) : friends.length === 0 ? (
-            <p className="fine-print">You have no friends yet. Send a request to get started.</p>
-          ) : (
-            <ul className="friends-list">
-              {friends.map((friend) => (
-                <li key={friend.user_id} className="friends-list-item">
-                  <span className="friends-username">{friend.username}</span>
-                  <span className="stat-label">Rating: {friend.rating}</span>
-                  <button type="button" className="link-action" onClick={() => removeFriend(friend.user_id)}>
-                    Remove
-                  </button>
+        <div className="friends-profile-layout">
+          <article className="panel-card">
+            {loadingFriends ? (
+              <p className="fine-print">Loading friends...</p>
+            ) : friends.length === 0 ? (
+              <p className="fine-print">You have no friends yet. Send a request to get started.</p>
+            ) : (
+              <ul className="friends-list">
+                {friends.map((friend) => (
+                  <li key={friend.user_id} className="friends-list-item">
+                    <button
+                      type="button"
+                      className="friend-name-button"
+                      onClick={() => {
+                        void handleViewFriendProfile(friend.user_id)
+                      }}
+                    >
+                      {friend.username}
+                    </button>
+                    <span className="stat-label">Rating: {friend.rating}</span>
+                    <button
+                      type="button"
+                      className="link-action"
+                      onClick={() => {
+                        void handleViewFriendProfile(friend.user_id)
+                      }}
+                    >
+                      View profile
+                    </button>
+                    <button type="button" className="link-action" onClick={() => removeFriend(friend.user_id)}>
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </article>
+
+          <article className="panel-card">
+            <h3>Friend profile</h3>
+            {loadingFriendProfile ? (
+              <p className="fine-print">Loading profile...</p>
+            ) : selectedFriendProfile ? (
+              <ul className="simple-list">
+                <li>
+                  Username: <strong>{selectedFriendProfile.username}</strong>
                 </li>
-              ))}
-            </ul>
-          )}
-        </article>
+                <li>
+                  Rating: <strong>{selectedFriendProfile.rating}</strong>
+                </li>
+                <li>
+                  Member since:{' '}
+                  <strong>
+                    {selectedFriendProfile.createdAt
+                      ? new Date(selectedFriendProfile.createdAt).toLocaleDateString()
+                      : '—'}
+                  </strong>
+                </li>
+                <li>
+                  Favorite openings:{' '}
+                  <strong>
+                    {selectedFriendProfile.favoriteOpenings.length > 0
+                      ? selectedFriendProfile.favoriteOpenings.join(', ')
+                      : 'None yet'}
+                  </strong>
+                </li>
+              </ul>
+            ) : (
+              <p className="fine-print">Select a friend to view their profile.</p>
+            )}
+          </article>
+        </div>
       )}
 
       {tab === 'requests' && (

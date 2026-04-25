@@ -102,13 +102,12 @@ app.post('/api/register', async (request, response) => {
       return
     }
 
-    const userId = Number(`${Date.now()}${Math.floor(Math.random() * 1000)}`)
     const rating = 1200
     const passwordHash = await bcrypt.hash(password, 12)
 
     await pool.execute(
-      'INSERT INTO Users (user_id, username, password, created_at, last_login, rating) VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)',
-      [userId, username, passwordHash, rating],
+      'INSERT INTO Users (username, password, created_at, last_login, rating) VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)',
+      [username, passwordHash, rating],
     )
 
     response.status(201).json({ message: 'Account created successfully.' })

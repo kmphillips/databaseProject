@@ -4,7 +4,6 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import './App.css'
 import { AppLayout } from './components/AppLayout'
 import { CreateAccountPage } from './pages/CreateAccountPage'
-import { DashboardPage } from './pages/DashboardPage'
 import { GamePage } from './pages/GamePage'
 import { HistoricalGamesPage } from './pages/HistoricalGamesPage'
 import { PgnUploadPage } from './pages/PgnUploadPage'
@@ -62,7 +61,6 @@ function App() {
           <Route index element={<Navigate to={user ? '/game' : '/login'} replace />} />
           <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
           <Route path="/create-account" element={<GuestRoute><CreateAccountPage /></GuestRoute>} />
-          <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
           <Route path="/game" element={<ProtectedRoute><GamePage /></ProtectedRoute>} />
           <Route path="/historical-games" element={<ProtectedRoute><HistoricalGamesPage /></ProtectedRoute>} />
           <Route path="/pgn-upload" element={<ProtectedRoute><PgnUploadPage /></ProtectedRoute>} />
