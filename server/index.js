@@ -859,6 +859,12 @@ app.post('/api/friends/request', async (request, response) => {
         response.status(409).json({ message: 'You are already friends.' })
       } else if (status === 'pending') {
         response.status(409).json({ message: 'Friend request already sent.' })
+      } else if (status === 'rejected') {
+        await pool.execute(
+          "UPDATE FriendsWith SET status = 'pending' WHERE user_id = ? AND friend_user_id = ?",
+          [userId, friendUserId],
+        )
+        response.status(201).json({ message: 'Friend request sent.' })
       } else {
         response.status(409).json({ message: 'A friend request already exists.' })
       }
@@ -898,7 +904,9 @@ app.post('/api/friends/accept', async (request, response) => {
     }
 
     await connection.execute(
-      "INSERT INTO FriendsWith (user_id, friend_user_id, status) VALUES (?, ?, 'accepted')",
+      `INSERT INTO FriendsWith (user_id, friend_user_id, status)
+       VALUES (?, ?, 'accepted')
+       ON DUPLICATE KEY UPDATE status = VALUES(status)`,
       [userId, friendUserId],
     )
 
